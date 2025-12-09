@@ -28,7 +28,7 @@ KEYBIND_KEY = "Z"
 #   medium (~1.5 GB) - Slow, excellent accuracy
 #   large  (~3 GB)   - Slowest, best accuracy (requires lots of RAM)
 
-MODEL_SIZE = "small"
+MODEL_SIZE = "base"
 
 # Compute type:
 #   "int8"    - Best for CPU (faster, less memory)

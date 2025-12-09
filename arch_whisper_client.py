@@ -34,7 +34,13 @@ def send_command(command: str) -> str:
 def main():
     if len(sys.argv) < 2:
         print("Usage: arch_whisper_client.py <command>")
-        print("Commands: start, stop, status, ping")
+        print("Commands: start, stop, status, ping, reset")
+        print("")
+        print("  start   - Start recording")
+        print("  stop    - Stop recording and transcribe")
+        print("  status  - Show current state (idle/recording/transcribing)")
+        print("  ping    - Test daemon connection")
+        print("  reset   - Force reset if stuck")
         sys.exit(1)
 
     command = sys.argv[1]

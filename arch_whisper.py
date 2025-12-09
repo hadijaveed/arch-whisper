@@ -4,6 +4,7 @@ arch-whisper: Local voice dictation daemon for Arch Linux + Hyprland
 Press Super+Z to record, release to transcribe and type.
 """
 
+import concurrent.futures
 import os
 import re
 import signal
@@ -11,6 +12,7 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import numpy as np
@@ -20,18 +22,21 @@ from faster_whisper import WhisperModel
 # Import configuration from config.py
 from config import MODEL_SIZE, COMPUTE_TYPE, LANGUAGE, SAMPLE_RATE, FILLERS
 
-# Constants (not user-configurable)
 SOCKET_PATH = "/tmp/arch-whisper.sock"
 CHANNELS = 1
+MAX_RECORDING_SECONDS = 60  # Auto-stop recording after this duration
+TRANSCRIPTION_TIMEOUT = 30  # Timeout for transcription in seconds
 
 
 class ArchWhisper:
     def __init__(self):
         self.model = None
         self.recording = False
+        self.transcribing = False
         self.audio_data = []
         self.stream = None
         self.lock = threading.Lock()
+        self.watchdog_timer = None
 
     def load_model(self):
         """Load the Whisper model into memory."""
@@ -43,9 +48,18 @@ class ArchWhisper:
         """Send a desktop notification."""
         try:
             subprocess.run(
-                ["notify-send", "-t", str(timeout), "-u", urgency, "-a", "arch-whisper", message],
+                [
+                    "notify-send",
+                    "-t",
+                    str(timeout),
+                    "-u",
+                    urgency,
+                    "-a",
+                    "arch-whisper",
+                    message,
+                ],
                 check=False,
-                capture_output=True
+                capture_output=True,
             )
         except Exception as e:
             print(f"Notification error: {e}")
@@ -63,6 +77,11 @@ class ArchWhisper:
             if self.recording:
                 return
 
+            # Cancel any pending watchdog timer
+            if self.watchdog_timer:
+                self.watchdog_timer.cancel()
+                self.watchdog_timer = None
+
             self.recording = True
             self.audio_data = []
 
@@ -72,9 +91,15 @@ class ArchWhisper:
                 channels=CHANNELS,
                 dtype=np.float32,
                 callback=self.audio_callback,
-                blocksize=1024
+                blocksize=1024,
             )
             self.stream.start()
+
+            # Start watchdog timer to auto-stop after max duration
+            self.watchdog_timer = threading.Timer(
+                MAX_RECORDING_SECONDS, self._watchdog_timeout
+            )
+            self.watchdog_timer.start()
 
         self.notify("Recording...", urgency="low", timeout=10000)
         print("Recording started...")
@@ -86,6 +111,11 @@ class ArchWhisper:
                 return ""
 
             self.recording = False
+
+            # Cancel watchdog timer
+            if self.watchdog_timer:
+                self.watchdog_timer.cancel()
+                self.watchdog_timer = None
 
             # Stop and close audio stream
             if self.stream:
@@ -108,26 +138,72 @@ class ArchWhisper:
             print("Audio too short, skipping transcription")
             return ""
 
-        # Transcribe
+        # Transcribe with timeout
         print("Transcribing...")
         try:
-            segments, info = self.model.transcribe(
-                audio,
-                language=LANGUAGE,
-                vad_filter=True,  # Filter out silence
-                vad_parameters=dict(min_silence_duration_ms=500),
-            )
-
-            text = " ".join([segment.text for segment in segments])
-            text = self.clean_text(text)
-
-            print(f"Transcribed: {text}")
-            return text
-
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(self._transcribe_audio, audio)
+                text = future.result(timeout=TRANSCRIPTION_TIMEOUT)
+                return text
+        except concurrent.futures.TimeoutError:
+            print(f"Transcription timeout after {TRANSCRIPTION_TIMEOUT}s!")
+            self.notify("Transcription timed out", urgency="critical")
+            return ""
         except Exception as e:
             print(f"Transcription error: {e}")
             self.notify(f"Transcription error: {e}", urgency="critical")
             return ""
+
+    def _transcribe_audio(self, audio) -> str:
+        """Transcribe audio using Whisper model."""
+        segments, info = self.model.transcribe(
+            audio,
+            language=LANGUAGE,
+            vad_filter=True,  # Filter out silence
+            vad_parameters=dict(min_silence_duration_ms=500),
+        )
+
+        text = " ".join([segment.text for segment in segments])
+        text = self.clean_text(text)
+
+        print(f"Transcribed: {text}")
+        return text
+
+    def _watchdog_timeout(self):
+        """Auto-stop recording if max duration exceeded."""
+        if self.recording:
+            print(f"Recording exceeded {MAX_RECORDING_SECONDS}s, auto-stopping")
+            self.notify("Recording auto-stopped (max duration)", urgency="normal")
+            threading.Thread(target=self._process_recording, daemon=True).start()
+
+    def _process_recording(self):
+        """Process recording in background thread."""
+        self.transcribing = True
+        try:
+            text = self.stop_recording()
+            if text:
+                self.type_text(text)
+        finally:
+            self.transcribing = False
+
+    def _force_reset(self):
+        """Force reset all state."""
+        print("Force resetting state...")
+        with self.lock:
+            self.recording = False
+            self.transcribing = False
+            self.audio_data = []
+            if self.watchdog_timer:
+                self.watchdog_timer.cancel()
+                self.watchdog_timer = None
+            if self.stream:
+                try:
+                    self.stream.stop()
+                    self.stream.close()
+                except Exception:
+                    pass
+                self.stream = None
+        self.notify("Reset!", urgency="low", timeout=1000)
 
     def clean_text(self, text: str) -> str:
         """Remove filler words and clean up text."""
@@ -137,16 +213,16 @@ class ArchWhisper:
         # Remove filler words
         for filler in FILLERS:
             # Word boundary matching for fillers
-            pattern = rf'\b{re.escape(filler)}\b'
-            text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+            pattern = rf"\b{re.escape(filler)}\b"
+            text = re.sub(pattern, "", text, flags=re.IGNORECASE)
 
         # Clean up whitespace
-        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r"\s+", " ", text)
         text = text.strip()
 
         # Remove leading/trailing punctuation artifacts
-        text = re.sub(r'^[,.\s]+', '', text)
-        text = re.sub(r'[,\s]+$', '', text)
+        text = re.sub(r"^[,.\s]+", "", text)
+        text = re.sub(r"[,\s]+$", "", text)
 
         return text
 
@@ -175,12 +251,19 @@ class ArchWhisper:
             self.start_recording()
             return "ok"
         elif command == "stop":
-            text = self.stop_recording()
-            if text:
-                self.type_text(text)
+            # Process recording in background thread so socket stays responsive
+            threading.Thread(target=self._process_recording, daemon=True).start()
+            return "ok"
+        elif command == "reset":
+            self._force_reset()
             return "ok"
         elif command == "status":
-            return "recording" if self.recording else "idle"
+            if self.recording:
+                return "recording"
+            elif self.transcribing:
+                return "transcribing"
+            else:
+                return "idle"
         elif command == "ping":
             return "pong"
         else:
@@ -196,7 +279,7 @@ class ArchWhisper:
         # Create socket
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(SOCKET_PATH)
-        server.listen(1)
+        server.listen(5)  # Allow multiple pending connections
 
         # Make socket accessible
         os.chmod(SOCKET_PATH, 0o666)
@@ -207,10 +290,10 @@ class ArchWhisper:
             while True:
                 conn, _ = server.accept()
                 try:
-                    data = conn.recv(1024).decode('utf-8')
+                    data = conn.recv(1024).decode("utf-8")
                     if data:
                         response = self.handle_command(data)
-                        conn.send(response.encode('utf-8'))
+                        conn.send(response.encode("utf-8"))
                 except Exception as e:
                     print(f"Connection error: {e}")
                 finally:
