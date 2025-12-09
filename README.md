@@ -2,20 +2,20 @@
 
 **Voice dictation for Linux that actually works.**
 
-Hold a key, speak, release — your words appear instantly. No cloud required, no subscription, no data leaves your machine.
+Hold a key, speak, release. Your words appear instantly. No cloud required, no subscription, no data leaves your machine.
 
 ---
 
 ## Why arch-whisper?
 
 I built this because existing voice dictation options on Linux were either:
-- **Too heavy** — bloated apps with unnecessary features
-- **Didn't work** — broken on Wayland, incompatible with modern compositors
-- **Cloud-only** — privacy concerns, subscription fees, latency
+- **Too heavy** - bloated apps with unnecessary features
+- **Didn't work** - broken on Wayland, incompatible with modern compositors
+- **Cloud-only** - privacy concerns, subscription fees, latency
 
 Inspired by [Whispr Flow](https://wisprflow.ai/) (excellent Mac app), but free and runs locally.
 
-**Tested on Arch Linux with [Omarchy](https://github.com/basecamp/omarchy)** — works on any Linux distro with Hyprland.
+**Tested on Arch Linux with [Omarchy](https://github.com/basecamp/omarchy)** - works on any Linux distro with Hyprland.
 
 ---
 
@@ -64,10 +64,10 @@ systemctl --user start arch-whisper && hyprctl reload
 
 ## Requirements
 
-- **Linux** — Any distro (tested on Arch Linux / Omarchy)
-- **Hyprland** — Wayland compositor (bindings can be adapted for others)
-- **Python 3.13** — Required (faster-whisper not compatible with 3.14 yet)
-- **Microphone** — Working audio input
+- **Linux** - Any distro (tested on Arch Linux / Omarchy)
+- **Hyprland** - Wayland compositor (bindings can be adapted for others)
+- **Python 3.13** - Required (faster-whisper not compatible with 3.14 yet)
+- **Microphone** - Working audio input
 
 ---
 
@@ -163,7 +163,11 @@ The installer will:
 
 ## Configuration
 
-All settings are in `config.py`.
+All settings are in the `config.py` file in the project directory. Open it in your editor to customize arch-whisper:
+
+```bash
+nano config.py   # or use your preferred editor
+```
 
 > **Important:** After any configuration change, restart the service:
 > ```bash
@@ -207,7 +211,9 @@ LANGUAGE = None   # Auto-detect (slower)
 
 ### Groq Cloud API (Optional)
 
-For faster transcription using Groq's cloud API:
+Groq offers excellent, fast transcription. It's also very affordable - even if you transcribe for hours per month, you won't pay more than ~$3.
+
+To enable Groq:
 
 1. Get API key from [console.groq.com/keys](https://console.groq.com/keys)
 
@@ -316,7 +322,7 @@ systemctl --user status arch-whisper
 
 Sometimes when you release the key, text doesn't type immediately. The recording completed successfully, but the stop event wasn't processed.
 
-**Workaround:** Press your keybind again (e.g., `Super+Z`) — the text will type on the second release.
+**Workaround:** Press your keybind again (e.g., `Super+Z`). The text will type on the second release.
 
 This is a known issue we're actively debugging. It appears to be related to Hyprland's key release event timing.
 
@@ -443,19 +449,19 @@ python --version
 
 | File | Purpose |
 |------|---------|
-| `arch_whisper.py` | Main daemon — loads model, records, transcribes, types |
-| `arch_whisper_client.py` | CLI client — sends commands to daemon |
+| `arch_whisper.py` | Main daemon: loads model, records, transcribes, types |
+| `arch_whisper_client.py` | CLI client: sends commands to daemon |
 | `config.py` | All user settings |
 | `install.sh` | Automated installer |
 
 ### How It Works
 
-1. **Daemon starts** — loads Whisper model into memory, listens on Unix socket
-2. **Key pressed** — Hyprland runs client with "start", daemon begins recording
-3. **Key released** — Hyprland runs client with "stop", daemon stops recording
-4. **Transcription** — audio sent to Whisper (local) or Groq API (cloud)
-5. **Transform** — optional LLM grammar correction with streaming output
-6. **Type** — ydotool injects keystrokes at kernel level (works everywhere)
+1. **Daemon starts** - loads Whisper model into memory, listens on Unix socket
+2. **Key pressed** - Hyprland runs client with "start", daemon begins recording
+3. **Key released** - Hyprland runs client with "stop", daemon stops recording
+4. **Transcription** - audio sent to Whisper (local) or Groq API (cloud)
+5. **Transform** - optional LLM grammar correction with streaming output
+6. **Type** - ydotool injects keystrokes at kernel level (works everywhere)
 
 ---
 

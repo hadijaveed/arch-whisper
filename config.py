@@ -16,7 +16,7 @@ Edit these values to customize your setup, then restart the service:
 #   KEYBIND_MOD = "CTRL SHIFT"  KEYBIND_KEY = "V"     → Ctrl+Shift+V
 
 KEYBIND_MOD = "SUPER"
-KEYBIND_KEY = "Z"
+KEYBIND_KEY = "z"
 
 # =============================================================================
 # TRANSCRIPTION BACKEND
