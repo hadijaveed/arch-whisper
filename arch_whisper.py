@@ -25,7 +25,7 @@ from config import MODEL_SIZE, COMPUTE_TYPE, LANGUAGE, SAMPLE_RATE, FILLERS
 SOCKET_PATH = "/tmp/arch-whisper.sock"
 CHANNELS = 1
 MAX_RECORDING_SECONDS = 60  # Auto-stop recording after this duration
-TRANSCRIPTION_TIMEOUT = 30  # Timeout for transcription in seconds
+TRANSCRIPTION_TIMEOUT = 10  # Timeout for transcription in seconds
 
 
 class ArchWhisper:
