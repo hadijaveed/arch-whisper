@@ -15,6 +15,23 @@ if ! command -v pacman &> /dev/null; then
     echo "You may need to install dependencies manually."
 fi
 
+# Configure keyboard shortcut
+echo "Configure keyboard shortcut for voice dictation"
+echo "Default: Super+Z (hold to record, release to transcribe)"
+echo ""
+read -p "Modifier key (SUPER/ALT/CTRL/CTRL SHIFT) [SUPER]: " KEYBIND_MOD
+KEYBIND_MOD=${KEYBIND_MOD:-SUPER}
+read -p "Key [Z]: " KEYBIND_KEY
+KEYBIND_KEY=${KEYBIND_KEY:-Z}
+
+echo ""
+echo "Using keyboard shortcut: $KEYBIND_MOD + $KEYBIND_KEY"
+echo ""
+
+# Update config.py with user's keybinding choice
+sed -i "s/^KEYBIND_MOD = .*/KEYBIND_MOD = \"$KEYBIND_MOD\"/" "$SCRIPT_DIR/config.py"
+sed -i "s/^KEYBIND_KEY = .*/KEYBIND_KEY = \"$KEYBIND_KEY\"/" "$SCRIPT_DIR/config.py"
+
 # Install system dependencies
 echo "Installing system dependencies..."
 sudo pacman -S --needed --noconfirm wtype libnotify python
@@ -69,20 +86,21 @@ if [ -f "$HYPRLAND_BINDINGS" ]; then
     if ! grep -q "arch-whisper" "$HYPRLAND_BINDINGS"; then
         cat >> "$HYPRLAND_BINDINGS" << EOF
 
-# arch-whisper voice dictation (Super+Z: hold to record, release to transcribe)
-bindd = SUPER, Z, Start voice dictation, exec, $SCRIPT_DIR/arch_whisper_client.py start
-bindr = SUPER, Z, exec, $SCRIPT_DIR/arch_whisper_client.py stop
+# arch-whisper voice dictation ($KEYBIND_MOD+$KEYBIND_KEY: hold to record, release to transcribe)
+bindd = $KEYBIND_MOD, $KEYBIND_KEY, Start voice dictation, exec, $SCRIPT_DIR/arch_whisper_client.py start
+bindr = $KEYBIND_MOD, $KEYBIND_KEY, exec, $SCRIPT_DIR/arch_whisper_client.py stop
 EOF
         echo "Added bindings to $HYPRLAND_BINDINGS"
     else
         echo "Bindings already exist in $HYPRLAND_BINDINGS"
+        echo "To update the keybinding, edit $HYPRLAND_BINDINGS manually"
     fi
 else
     echo "Warning: $HYPRLAND_BINDINGS not found."
-    echo "Add these bindings manually:"
+    echo "Add these bindings manually to your Hyprland config:"
     echo ""
-    echo "bindd = SUPER, Z, Start voice dictation, exec, $SCRIPT_DIR/arch_whisper_client.py start"
-    echo "bindr = SUPER, Z, exec, $SCRIPT_DIR/arch_whisper_client.py stop"
+    echo "bindd = $KEYBIND_MOD, $KEYBIND_KEY, Start voice dictation, exec, $SCRIPT_DIR/arch_whisper_client.py start"
+    echo "bindr = $KEYBIND_MOD, $KEYBIND_KEY, exec, $SCRIPT_DIR/arch_whisper_client.py stop"
 fi
 
 echo ""
@@ -95,8 +113,12 @@ echo "To reload Hyprland config:"
 echo "  hyprctl reload"
 echo ""
 echo "Usage:"
-echo "  Press and hold Super+Z to record"
-echo "  Release Super+Z to transcribe and type"
+echo "  Press and hold $KEYBIND_MOD+$KEYBIND_KEY to record"
+echo "  Release $KEYBIND_MOD+$KEYBIND_KEY to transcribe and type"
+echo ""
+echo "Configuration:"
+echo "  Edit config.py to change model, language, or filler words"
+echo "  Edit ~/.config/hypr/bindings.conf to change the keybinding"
 echo ""
 echo "Check status:"
 echo "  systemctl --user status arch-whisper"

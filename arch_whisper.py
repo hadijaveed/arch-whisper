@@ -17,20 +17,12 @@ import numpy as np
 import sounddevice as sd
 from faster_whisper import WhisperModel
 
-# Configuration
-SOCKET_PATH = "/tmp/arch-whisper.sock"
-SAMPLE_RATE = 16000  # Whisper expects 16kHz
-CHANNELS = 1
-MODEL_SIZE = "tiny"
-COMPUTE_TYPE = "int8"  # Optimized for CPU
-LANGUAGE = "en"
+# Import configuration from config.py
+from config import MODEL_SIZE, COMPUTE_TYPE, LANGUAGE, SAMPLE_RATE, FILLERS
 
-# Filler words to remove
-FILLERS = [
-    "um", "uh", "uhh", "umm", "hmm", "hm",
-    "like", "you know", "basically", "actually",
-    "i mean", "sort of", "kind of", "right",
-]
+# Constants (not user-configurable)
+SOCKET_PATH = "/tmp/arch-whisper.sock"
+CHANNELS = 1
 
 
 class ArchWhisper:
