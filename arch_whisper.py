@@ -52,11 +52,13 @@ class ArchWhisper:
         self.audio_data = []
         self.stream = None
         self.lock = threading.Lock()
+        self.processing_lock = threading.Lock()  # Serialize transcription/typing
         self.watchdog_timer = None
         self.cancel_transform = False
         self.shutdown_requested = False
-        self.last_typing_time = 0  # Timestamp of last typed text
-        self.transform_first_chunk = False  # Flag for first chunk of streaming transform
+        self.last_typing_time = 0
+        self.transform_first_chunk = False
+        self.pending_start = False  # Queue recording request
 
     def load_model(self):
         """Load the Whisper model into memory (only for local backend)."""
@@ -106,32 +108,39 @@ class ArchWhisper:
             if self.recording:
                 return
 
-            # Cancel any ongoing transform
-            self.cancel_transform = True
+            # If still processing, queue the request silently
+            if self.transcribing:
+                self.pending_start = True
+                print("Queued recording (still processing previous)...")
+                return
 
-            # Cancel any pending watchdog timer
-            if self.watchdog_timer:
-                self.watchdog_timer.cancel()
-                self.watchdog_timer = None
+            self._do_start_recording()
 
-            self.recording = True
-            self.audio_data = []
+    def _do_start_recording(self):
+        """Actually start recording (must be called with lock held)."""
+        self.pending_start = False
+        self.cancel_transform = True
 
-            # Start audio stream
-            self.stream = sd.InputStream(
-                samplerate=SAMPLE_RATE,
-                channels=CHANNELS,
-                dtype=np.float32,
-                callback=self.audio_callback,
-                blocksize=1024,
-            )
-            self.stream.start()
+        if self.watchdog_timer:
+            self.watchdog_timer.cancel()
+            self.watchdog_timer = None
 
-            # Start watchdog timer to auto-stop after max duration
-            self.watchdog_timer = threading.Timer(
-                MAX_RECORDING_SECONDS, self._watchdog_timeout
-            )
-            self.watchdog_timer.start()
+        self.recording = True
+        self.audio_data = []
+
+        self.stream = sd.InputStream(
+            samplerate=SAMPLE_RATE,
+            channels=CHANNELS,
+            dtype=np.float32,
+            callback=self.audio_callback,
+            blocksize=1024,
+        )
+        self.stream.start()
+
+        self.watchdog_timer = threading.Timer(
+            MAX_RECORDING_SECONDS, self._watchdog_timeout
+        )
+        self.watchdog_timer.start()
 
         self.notify("Recording...", urgency="low", timeout=10000)
         print("Recording started...")
@@ -250,19 +259,32 @@ class ArchWhisper:
 
     def _process_recording(self):
         """Process recording in background thread."""
-        self.transcribing = True
+        # Use processing lock to prevent concurrent processing
+        if not self.processing_lock.acquire(blocking=False):
+            print("Already processing, skipping...")
+            return
+
         try:
+            with self.lock:
+                self.transcribing = True
+
             text = self.stop_recording()
             if text:
                 if TRANSFORM_ENABLED:
-                    # Transform will stream-type the result
                     self._transform_text(text)
                     self.notify("Typed!", urgency="low", timeout=1000)
                 else:
-                    # Type directly
                     self.type_text(text)
+        except Exception as e:
+            print(f"Processing error: {e}")
+            self.notify(f"Error: {e}", urgency="critical")
         finally:
-            self.transcribing = False
+            with self.lock:
+                self.transcribing = False
+                # Check for pending recording request
+                if self.pending_start:
+                    self._do_start_recording()
+            self.processing_lock.release()
 
     def _force_reset(self):
         """Force reset all state."""
@@ -271,6 +293,7 @@ class ArchWhisper:
         with self.lock:
             self.recording = False
             self.transcribing = False
+            self.pending_start = False
             self.audio_data = []
             if self.watchdog_timer:
                 self.watchdog_timer.cancel()

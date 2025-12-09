@@ -34,7 +34,7 @@ sed -i "s/^KEYBIND_KEY = .*/KEYBIND_KEY = \"$KEYBIND_KEY\"/" "$SCRIPT_DIR/config
 
 # Install system dependencies
 echo "Installing system dependencies..."
-sudo pacman -S --needed --noconfirm wtype libnotify python
+sudo pacman -S --needed --noconfirm libnotify python ydotool
 
 # Create virtual environment with Python 3.13 (faster-whisper not compatible with 3.14 yet)
 echo ""
@@ -78,6 +78,11 @@ EOF
 
 systemctl --user daemon-reload
 systemctl --user enable arch-whisper.service
+
+# Enable ydotool daemon (required for ydotool to work)
+echo ""
+echo "Enabling ydotool daemon..."
+systemctl --user enable --now ydotool
 
 # Add Hyprland bindings
 echo ""
