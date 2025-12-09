@@ -25,7 +25,7 @@ KEYBIND_KEY = "Z"
 # "groq"  - Use Groq Whisper API (requires GROQ_API_KEY env var)
 # TRANSCRIPTION_BACKEND = "local"
 
-TRANSCRIPTION_BACKEND = "groq"
+TRANSCRIPTION_BACKEND = "local"
 
 # =============================================================================
 # LOCAL WHISPER SETTINGS (only used if TRANSCRIPTION_BACKEND = "local")
@@ -37,7 +37,7 @@ TRANSCRIPTION_BACKEND = "groq"
 #   medium (~1.5 GB) - Slow, excellent accuracy
 #   large  (~3 GB)   - Slowest, best accuracy (requires lots of RAM)
 
-MODEL_SIZE = "base"
+MODEL_SIZE = "small"
 
 # Compute type:
 #   "int8"    - Best for CPU (faster, less memory)

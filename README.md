@@ -1,77 +1,128 @@
 # arch-whisper
 
-Local voice dictation for Arch Linux + Hyprland. Hold a key to record, release to transcribe and type.
+**Voice dictation for Linux that actually works.**
 
-Inspired by [Whispr Flow](https://wisprflow.ai/) — but free, local, and private. No cloud, no subscription, no data leaves your machine.
+Hold a key, speak, release — your words appear instantly. No cloud required, no subscription, no data leaves your machine.
 
-Built in 15 minutes with [Claude Code](https://claude.ai/code) (Opus 4.5).
+---
 
-## Features
+## Why arch-whisper?
 
-- **Push-to-talk**: Hold your shortcut key to record, release to transcribe
-- **Instant response**: Whisper model stays loaded in memory
-- **Works anywhere**: Types into any Wayland application
-- **100% local**: Runs entirely offline after initial model download
-- **Cloud option**: Use Groq API for faster transcription (optional)
-- **Grammar correction**: Optional LLM post-processing with streaming output
-- **Smart cleanup**: Automatically removes filler words (um, uh, like, etc.)
-- **Visual feedback**: Desktop notifications show recording state
-- **Configurable**: Change keybinding, model size, language, and more
+I built this because existing voice dictation options on Linux were either:
+- **Too heavy** — bloated apps with unnecessary features
+- **Didn't work** — broken on Wayland, incompatible with modern compositors
+- **Cloud-only** — privacy concerns, subscription fees, latency
+
+Inspired by [Whispr Flow](https://wisprflow.ai/) (excellent Mac app), but free and runs locally.
+
+**Tested on Arch Linux with [Omarchy](https://github.com/basecamp/omarchy)** — works on any Linux distro with Hyprland.
+
+---
 
 ## Quick Start
+
+> **Keybinding:** Default is `Super+Z`. The installer will prompt you to choose your preferred shortcut.
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/arch-whisper.git
 cd arch-whisper
 ./install.sh
+```
+
+When prompted, choose your keybinding (or press Enter for default):
+```
+Configure keyboard shortcut for voice dictation
+Default: Super+Z (hold to record, release to transcribe)
+
+Modifier key (SUPER/ALT/CTRL/CTRL SHIFT) [SUPER]:
+Key [Z]:
+```
+
+Then start the service:
+```bash
 systemctl --user start arch-whisper && hyprctl reload
 ```
 
-That's it! Press **Super+Z** (or your chosen shortcut) to dictate.
+**That's it!** Hold your shortcut, speak, release — text appears.
+
+---
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| **Push-to-talk** | Hold to record, release to transcribe and type |
+| **Works everywhere** | Types into any application (uses kernel-level input) |
+| **Instant response** | Whisper model stays loaded in memory |
+| **100% local** | Runs entirely offline after model download |
+| **Cloud option** | Optional Groq API for faster transcription |
+| **Grammar correction** | Optional LLM post-processing (local or cloud) |
+| **Smart cleanup** | Automatically removes filler words (um, uh, like) |
+| **Visual feedback** | Desktop notifications show recording state |
+
+---
 
 ## Requirements
 
-- **Arch Linux** (or Arch-based distro)
-- **Hyprland** compositor (tested with [Omarchy](https://omakub.org/omarchy))
-- **Python 3.13** (not 3.14 — faster-whisper compatibility)
-- **Working microphone**
+- **Linux** — Any distro (tested on Arch Linux / Omarchy)
+- **Hyprland** — Wayland compositor (bindings can be adapted for others)
+- **Python 3.13** — Required (faster-whisper not compatible with 3.14 yet)
+- **Microphone** — Working audio input
+
+---
 
 ## Installation
 
-### Automatic (recommended)
+### Automatic (Recommended)
 
 ```bash
 ./install.sh
 ```
 
 The installer will:
-1. Ask for your preferred keyboard shortcut (default: Super+Z)
-2. Install system dependencies (wtype, libnotify)
+1. Ask for your keyboard shortcut preference
+2. Install system dependencies (`ydotool`, `libnotify`)
 3. Create Python virtual environment
 4. Install Python packages (faster-whisper, sounddevice, numpy)
 5. Set up systemd user service
-6. Add Hyprland keybindings
+6. Configure Hyprland keybindings
+7. Enable the ydotool daemon
 
-### Manual
+### Manual Installation
 
-1. Install system packages:
+<details>
+<summary>Click to expand manual steps</summary>
+
+1. **Install system packages:**
+
+   Arch Linux:
    ```bash
-   sudo pacman -S wtype libnotify python
+   sudo pacman -S ydotool libnotify python
    ```
 
-2. Create virtual environment:
+   Ubuntu/Debian:
+   ```bash
+   sudo apt install ydotool libnotify-bin python3
+   ```
+
+   Fedora:
+   ```bash
+   sudo dnf install ydotool libnotify python3
+   ```
+
+2. **Create virtual environment:**
    ```bash
    python3.13 -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
    ```
 
-3. Make scripts executable:
+3. **Make scripts executable:**
    ```bash
    chmod +x arch_whisper.py arch_whisper_client.py
    ```
 
-4. Create systemd service at `~/.config/systemd/user/arch-whisper.service`:
+4. **Create systemd service** at `~/.config/systemd/user/arch-whisper.service`:
    ```ini
    [Unit]
    Description=arch-whisper voice dictation daemon
@@ -88,244 +139,188 @@ The installer will:
    WantedBy=default.target
    ```
 
-5. Enable and start service:
+5. **Enable services:**
    ```bash
    systemctl --user daemon-reload
    systemctl --user enable --now arch-whisper
+   systemctl --user enable --now ydotool
    ```
 
-6. Add to `~/.config/hypr/bindings.conf` or add your preferred key-bindings:
+6. **Add Hyprland bindings** to `~/.config/hypr/bindings.conf`:
    ```
    bindd = SUPER, Z, Start voice dictation, exec, /path/to/arch_whisper_client.py start
    bindr = SUPER, Z, exec, /path/to/arch_whisper_client.py stop
    ```
 
-7. Reload Hyprland:
+7. **Reload Hyprland:**
    ```bash
    hyprctl reload
    ```
 
-## Usage
+</details>
 
-1. **Press and hold** your shortcut key (default: Super+Z)
-2. **Speak** — you'll see a "Recording..." notification
-3. **Release** the key — text is transcribed and typed into the active window
-
-### Commands
-
-```bash
-# Check daemon status
-./arch_whisper_client.py status
-
-# Test connection
-./arch_whisper_client.py ping
-
-# View logs
-journalctl --user -u arch-whisper -f
-
-# Restart after config changes
-systemctl --user restart arch-whisper
-```
+---
 
 ## Configuration
 
-All settings are in `config.py`. Edit and restart the service to apply changes.
+All settings are in `config.py`.
 
-### Change Keyboard Shortcut
+> **Important:** After any configuration change, restart the service:
+> ```bash
+> systemctl --user restart arch-whisper
+> ```
 
-1. Edit `config.py`:
-   ```python
-   KEYBIND_MOD = "ALT"      # Options: SUPER, ALT, CTRL, CTRL SHIFT
-   KEYBIND_KEY = "D"        # Any single key
-   ```
+### Keyboard Shortcut
 
-2. Update `~/.config/hypr/bindings.conf`:
-   ```
-   # Find and replace the arch-whisper lines:
-   bindd = ALT, D, Start voice dictation, exec, /path/to/arch_whisper_client.py start
-   bindr = ALT, D, exec, /path/to/arch_whisper_client.py stop
-   ```
+To change after installation, edit `~/.config/hypr/bindings.conf`:
+```
+bindd = ALT, D, Start voice dictation, exec, /path/to/arch_whisper_client.py start
+bindr = ALT, D, exec, /path/to/arch_whisper_client.py stop
+```
 
-3. Reload Hyprland:
-   ```bash
-   hyprctl reload
-   ```
+Then reload: `hyprctl reload`
 
-### Change Whisper Model
+### Whisper Model
 
 Edit `config.py`:
 ```python
 MODEL_SIZE = "base"  # Options: tiny, base, small, medium, large
-# get decent latency and performance on small
 ```
 
-| Model  | Size    | Speed    | Accuracy  | RAM Usage |
-|--------|---------|----------|-----------|-----------|
-| tiny   | ~75 MB  | Fastest  | Good      | ~1 GB     |
-| base   | ~142 MB | Fast     | Better    | ~1 GB     |
-| small  | ~466 MB | Medium   | Great     | ~2 GB     |
-| medium | ~1.5 GB | Slow     | Excellent | ~5 GB     |
-| large  | ~3 GB   | Slowest  | Best      | ~10 GB    |
+| Model | Download | Speed | Accuracy | RAM |
+|-------|----------|-------|----------|-----|
+| tiny | ~75 MB | Fastest | Good | ~1 GB |
+| base | ~142 MB | Fast | Better | ~1 GB |
+| small | ~466 MB | Medium | Great | ~2 GB |
+| medium | ~1.5 GB | Slow | Excellent | ~5 GB |
+| large | ~3 GB | Slowest | Best | ~10 GB |
 
-Then restart:
-```bash
-systemctl --user restart arch-whisper
-```
+### Language
 
-### Change Language
-
-Edit `config.py`:
 ```python
+LANGUAGE = "en"   # English (default)
 LANGUAGE = "es"   # Spanish
 LANGUAGE = "fr"   # French
 LANGUAGE = "de"   # German
-LANGUAGE = "zh"   # Chinese
-LANGUAGE = "ja"   # Japanese
 LANGUAGE = None   # Auto-detect (slower)
 ```
 
-### Customize Filler Words
+### Groq Cloud API (Optional)
 
-Edit the `FILLERS` list in `config.py`:
-```python
-FILLERS = [
-    "um", "uh", "like", "you know",
-    # Add your own...
-]
-```
+For faster transcription using Groq's cloud API:
 
-## Groq Cloud API (Optional)
+1. Get API key from [console.groq.com/keys](https://console.groq.com/keys)
 
-For faster transcription using Groq's cloud Whisper API instead of local processing:
-
-### Setup
-
-1. Get an API key from [console.groq.com/keys](https://console.groq.com/keys)
-
-2. Add to your shell profile (`~/.bashrc` or `~/.zshrc`):
+2. Add to `~/.bashrc`:
    ```bash
    export GROQ_API_KEY='gsk_your_key_here'
    ```
 
 3. Edit `config.py`:
    ```python
-   TRANSCRIPTION_BACKEND = "groq"  # Instead of "local"
+   TRANSCRIPTION_BACKEND = "groq"
    GROQ_WHISPER_MODEL = "whisper-large-v3-turbo"  # Fast and cheap
    ```
 
-4. Restart the service:
-   ```bash
-   systemctl --user restart arch-whisper
-   ```
+4. Restart service
 
-### Groq Whisper Models
+| Model | Speed | Cost |
+|-------|-------|------|
+| whisper-large-v3-turbo | 216x realtime | $0.04/hour |
+| whisper-large-v3 | 164x realtime | $0.111/hour |
 
-| Model | Speed | Cost | Word Error Rate |
-|-------|-------|------|-----------------|
-| whisper-large-v3-turbo | 216x realtime | $0.04/hour | 12% |
-| whisper-large-v3 | 164x realtime | $0.111/hour | 10.3% |
+### Grammar Correction (Optional)
 
-## Grammar Correction (Optional)
+Fix grammar, punctuation, and capitalization with LLM post-processing.
 
-Enable LLM post-processing to fix grammar, punctuation, and capitalization. Text streams directly into your application as the LLM generates it.
-
-### Using Groq LLM (Cloud)
-
-1. Ensure `GROQ_API_KEY` is set (same key as transcription)
-
-2. Edit `config.py`:
-   ```python
-   TRANSFORM_ENABLED = True
-   TRANSFORM_BACKEND = "groq"
-   TRANSFORM_MODEL = "llama-3.1-8b-instant"  # Fast and cheap
-   ```
-
-3. Restart the service
-
-### Using Ollama (Local, Free)
-
-For fully offline grammar correction:
-
-1. Install Ollama:
-   ```bash
-   curl -fsSL https://ollama.com/install.sh | sh
-   ```
-
-2. Pull a small model:
-   ```bash
-   ollama pull qwen2.5:3b   # ~3GB RAM, fast
-   # or
-   ollama pull phi3:mini    # ~4GB RAM, good quality
-   ```
-
-3. Edit `config.py`:
-   ```python
-   TRANSFORM_ENABLED = True
-   TRANSFORM_BACKEND = "ollama"
-   TRANSFORM_MODEL = "qwen2.5:3b"
-   ```
-
-4. Restart the service
-
-### Transform Models
-
-**Groq (cloud):**
-| Model | Speed | Cost (per 1M tokens) |
-|-------|-------|---------------------|
-| llama-3.1-8b-instant | 560 tok/s | $0.05 in / $0.08 out |
-| llama-3.3-70b-versatile | 280 tok/s | $0.59 in / $0.79 out |
-
-**Ollama (local):**
-| Model | RAM | Speed | Notes |
-|-------|-----|-------|-------|
-| qwen2.5:3b | ~3GB | Fast | Good for grammar |
-| phi3:mini | ~4GB | Fast | Excellent quality |
-| qwen2.5:7b | ~5GB | Medium | Better quality |
-
-### Custom Transform Prompt
-
-Edit `TRANSFORM_PROMPT` in `config.py` to customize how the LLM processes your text:
+**Using Groq (cloud):**
 ```python
-TRANSFORM_PROMPT = """Fix grammar, spelling, and punctuation in the following transcribed speech.
-Add proper capitalization and commas where needed.
-Keep the original meaning and tone.
-Only output the corrected text, nothing else.
-Do not add any explanations or notes.
-
-Text: {text}"""
+TRANSFORM_ENABLED = True
+TRANSFORM_BACKEND = "groq"
+TRANSFORM_MODEL = "llama-3.1-8b-instant"
 ```
 
-## Architecture
+**Using Ollama (local, free):**
+```bash
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
 
+# Pull a model
+ollama pull qwen2.5:3b
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         Hyprland                             │
-│  Super+Z pressed  → exec arch_whisper_client.py start       │
-│  Super+Z released → exec arch_whisper_client.py stop        │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  arch_whisper_client.py                      │
-│            Sends command via Unix socket                     │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   arch_whisper.py (daemon)                   │
-│                                                              │
-│  Audio Recording                                             │
-│       │                                                      │
-│       ▼                                                      │
-│  Transcription (local faster-whisper OR Groq API)           │
-│       │                                                      │
-│       ▼                                                      │
-│  Transform (optional: Groq LLM or Ollama, streaming)        │
-│       │                                                      │
-│       ▼                                                      │
-│  wtype → types into active window                           │
-└─────────────────────────────────────────────────────────────┘
+
+```python
+TRANSFORM_ENABLED = True
+TRANSFORM_BACKEND = "ollama"
+TRANSFORM_MODEL = "qwen2.5:3b"
 ```
+
+### Filler Words
+
+Customize which words are automatically removed:
+```python
+FILLERS = [
+    "um", "uh", "like", "you know",
+    "basically", "actually", "i mean",
+    # Add your own...
+]
+```
+
+---
+
+## Usage
+
+### Basic Usage
+
+1. **Press and hold** your shortcut key (default: `Super+Z`)
+2. **Speak** — you'll see a "Recording..." notification
+3. **Release** the key — text is transcribed and typed into the active window
+
+### Commands
+
+```bash
+# Check if daemon is running
+./arch_whisper_client.py ping
+
+# View current state (idle/recording/transcribing)
+./arch_whisper_client.py status
+
+# Force reset if stuck
+./arch_whisper_client.py reset
+```
+
+### Service Management
+
+```bash
+# Start the service
+systemctl --user start arch-whisper
+
+# Stop the service
+systemctl --user stop arch-whisper
+
+# Restart (required after config changes)
+systemctl --user restart arch-whisper
+
+# View logs
+journalctl --user -u arch-whisper -f
+
+# Check status
+systemctl --user status arch-whisper
+```
+
+---
+
+## Known Issues
+
+### Recording occasionally gets stuck on release
+
+Sometimes when you release the key, text doesn't type immediately. The recording completed successfully, but the stop event wasn't processed.
+
+**Workaround:** Press your keybind again (e.g., `Super+Z`) — the text will type on the second release.
+
+This is a known issue we're actively debugging. It appears to be related to Hyprland's key release event timing.
+
+---
 
 ## Troubleshooting
 
@@ -335,7 +330,7 @@ Text: {text}"""
 # Check status
 systemctl --user status arch-whisper
 
-# View logs
+# View logs for errors
 journalctl --user -u arch-whisper -f
 
 # Restart
@@ -352,36 +347,27 @@ python -c "import sounddevice; print(sounddevice.query_devices())"
 arecord -d 3 test.wav && aplay test.wav
 ```
 
-### wtype not working
+### Text not typing
 
 ```bash
-# Check if installed
-which wtype
+# Check ydotool daemon is running
+systemctl --user status ydotool
 
-# Test manually
-wtype "hello world"
+# Start if not running
+systemctl --user start ydotool
+
+# Test ydotool manually
+ydotool type "hello world"
 ```
 
-If wtype doesn't work, ensure you're running on Wayland:
+### Recording gets stuck
+
 ```bash
-echo $XDG_SESSION_TYPE  # Should print "wayland"
-```
+# Force reset
+./arch_whisper_client.py reset
 
-### Python version issues
-
-faster-whisper requires Python ≤3.13. Check your version:
-```bash
-python --version
-/usr/bin/python3.13 --version
-```
-
-### Model download fails
-
-The model downloads on first use. If it fails:
-```bash
-# Check internet connection
-# Try downloading manually
-python -c "from faster_whisper import WhisperModel; WhisperModel('tiny')"
+# Or restart service
+systemctl --user restart arch-whisper
 ```
 
 ### Groq API errors
@@ -390,34 +376,88 @@ python -c "from faster_whisper import WhisperModel; WhisperModel('tiny')"
 # Check API key is set
 echo $GROQ_API_KEY
 
-# Test API key
-curl -X POST "https://api.groq.com/openai/v1/models" \
-  -H "Authorization: Bearer $GROQ_API_KEY"
+# Verify it's exported in your shell config
+grep GROQ_API_KEY ~/.bashrc
 ```
 
 ### Ollama not working
 
 ```bash
-# Check if Ollama is running
+# Check Ollama is running
 curl http://localhost:11434/api/tags
 
 # Start Ollama
 ollama serve
 
-# Check model is pulled
+# Verify model is installed
 ollama list
 ```
 
-### Recording gets stuck
+### Python version issues
 
-If the daemon gets stuck in recording mode:
+faster-whisper requires Python 3.13 or earlier:
 ```bash
-# Force reset
-./arch_whisper_client.py reset
-
-# Or restart the service
-systemctl --user restart arch-whisper
+python --version
+/usr/bin/python3.13 --version
 ```
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Hyprland                            │
+│  Super+Z pressed  → exec arch_whisper_client.py start       │
+│  Super+Z released → exec arch_whisper_client.py stop        │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                  arch_whisper_client.py                     │
+│            Lightweight client, sends commands               │
+│                   via Unix socket                           │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+                    /tmp/arch-whisper.sock
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│              arch_whisper.py (daemon)                       │
+│                                                             │
+│  ┌─────────────┐    ┌──────────────────┐    ┌───────────┐  │
+│  │   Record    │ →  │   Transcribe     │ →  │  Transform │  │
+│  │ (sounddevice)│    │ (whisper/groq)   │    │ (optional) │  │
+│  └─────────────┘    └──────────────────┘    └───────────┘  │
+│                                                     │       │
+│                                                     ▼       │
+│                                              ┌───────────┐  │
+│                                              │   Type    │  │
+│                                              │ (ydotool) │  │
+│                                              └───────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `arch_whisper.py` | Main daemon — loads model, records, transcribes, types |
+| `arch_whisper_client.py` | CLI client — sends commands to daemon |
+| `config.py` | All user settings |
+| `install.sh` | Automated installer |
+
+### How It Works
+
+1. **Daemon starts** — loads Whisper model into memory, listens on Unix socket
+2. **Key pressed** — Hyprland runs client with "start", daemon begins recording
+3. **Key released** — Hyprland runs client with "stop", daemon stops recording
+4. **Transcription** — audio sent to Whisper (local) or Groq API (cloud)
+5. **Transform** — optional LLM grammar correction with streaming output
+6. **Type** — ydotool injects keystrokes at kernel level (works everywhere)
+
+---
 
 ## Uninstall
 
@@ -430,21 +470,21 @@ systemctl --user disable arch-whisper
 rm ~/.config/systemd/user/arch-whisper.service
 systemctl --user daemon-reload
 
-# Remove Hyprland bindings (edit manually)
-# Remove these lines from ~/.config/hypr/bindings.conf:
-#   bindd = SUPER, Z, Start voice dictation, exec, ...
-#   bindr = SUPER, Z, exec, ...
+# Remove Hyprland bindings
+# Edit ~/.config/hypr/bindings.conf and remove arch-whisper lines
 
 # Remove project folder
 rm -rf /path/to/arch-whisper
 ```
 
+---
+
 ## Credits
 
-- Inspired by [Whispr Flow](https://wisprflow.ai/) — excellent Mac app, but why pay when you can run it locally?
-- Hyprland setup: [Omarchy](https://omakub.org/omarchy) by DHH
-- Speech-to-text: [faster-whisper](https://github.com/SYSTRAN/faster-whisper) by SYSTRAN
-- Built with [Claude Code](https://claude.ai/code) (Opus 4.5) in 15 minutes
+- Inspired by [Whispr Flow](https://wisprflow.ai/)
+- Hyprland setup: [Omarchy](https://github.com/basecamp/omarchy) by DHH
+- Speech-to-text: [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
+- Built with [Claude Code](https://claude.ai/code) (Opus 4.5)
 
 ## License
 
