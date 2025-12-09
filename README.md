@@ -12,6 +12,8 @@ Built in 15 minutes with [Claude Code](https://claude.ai/code) (Opus 4.5).
 - **Instant response**: Whisper model stays loaded in memory
 - **Works anywhere**: Types into any Wayland application
 - **100% local**: Runs entirely offline after initial model download
+- **Cloud option**: Use Groq API for faster transcription (optional)
+- **Grammar correction**: Optional LLM post-processing with streaming output
 - **Smart cleanup**: Automatically removes filler words (um, uh, like, etc.)
 - **Visual feedback**: Desktop notifications show recording state
 - **Configurable**: Change keybinding, model size, language, and more
@@ -192,6 +194,107 @@ FILLERS = [
 ]
 ```
 
+## Groq Cloud API (Optional)
+
+For faster transcription using Groq's cloud Whisper API instead of local processing:
+
+### Setup
+
+1. Get an API key from [console.groq.com/keys](https://console.groq.com/keys)
+
+2. Add to your shell profile (`~/.bashrc` or `~/.zshrc`):
+   ```bash
+   export GROQ_API_KEY='gsk_your_key_here'
+   ```
+
+3. Edit `config.py`:
+   ```python
+   TRANSCRIPTION_BACKEND = "groq"  # Instead of "local"
+   GROQ_WHISPER_MODEL = "whisper-large-v3-turbo"  # Fast and cheap
+   ```
+
+4. Restart the service:
+   ```bash
+   systemctl --user restart arch-whisper
+   ```
+
+### Groq Whisper Models
+
+| Model | Speed | Cost | Word Error Rate |
+|-------|-------|------|-----------------|
+| whisper-large-v3-turbo | 216x realtime | $0.04/hour | 12% |
+| whisper-large-v3 | 164x realtime | $0.111/hour | 10.3% |
+
+## Grammar Correction (Optional)
+
+Enable LLM post-processing to fix grammar, punctuation, and capitalization. Text streams directly into your application as the LLM generates it.
+
+### Using Groq LLM (Cloud)
+
+1. Ensure `GROQ_API_KEY` is set (same key as transcription)
+
+2. Edit `config.py`:
+   ```python
+   TRANSFORM_ENABLED = True
+   TRANSFORM_BACKEND = "groq"
+   TRANSFORM_MODEL = "llama-3.1-8b-instant"  # Fast and cheap
+   ```
+
+3. Restart the service
+
+### Using Ollama (Local, Free)
+
+For fully offline grammar correction:
+
+1. Install Ollama:
+   ```bash
+   curl -fsSL https://ollama.com/install.sh | sh
+   ```
+
+2. Pull a small model:
+   ```bash
+   ollama pull qwen2.5:3b   # ~3GB RAM, fast
+   # or
+   ollama pull phi3:mini    # ~4GB RAM, good quality
+   ```
+
+3. Edit `config.py`:
+   ```python
+   TRANSFORM_ENABLED = True
+   TRANSFORM_BACKEND = "ollama"
+   TRANSFORM_MODEL = "qwen2.5:3b"
+   ```
+
+4. Restart the service
+
+### Transform Models
+
+**Groq (cloud):**
+| Model | Speed | Cost (per 1M tokens) |
+|-------|-------|---------------------|
+| llama-3.1-8b-instant | 560 tok/s | $0.05 in / $0.08 out |
+| llama-3.3-70b-versatile | 280 tok/s | $0.59 in / $0.79 out |
+
+**Ollama (local):**
+| Model | RAM | Speed | Notes |
+|-------|-----|-------|-------|
+| qwen2.5:3b | ~3GB | Fast | Good for grammar |
+| phi3:mini | ~4GB | Fast | Excellent quality |
+| qwen2.5:7b | ~5GB | Medium | Better quality |
+
+### Custom Transform Prompt
+
+Edit `TRANSFORM_PROMPT` in `config.py` to customize how the LLM processes your text:
+```python
+TRANSFORM_PROMPT = """Fix grammar, spelling, and punctuation in the following transcribed speech.
+Add proper capitalization and commas where needed.
+Keep the original meaning and tone.
+Only output the corrected text, nothing else.
+Do not add any explanations or notes.
+
+Text: {text}"""
+```
+
 ## Architecture
 
 ```
@@ -210,10 +313,17 @@ FILLERS = [
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                   arch_whisper.py (daemon)                   │
-│  • Whisper model loaded in memory                           │
-│  • Records audio while "start" → "stop"                     │
-│  • Transcribes with faster-whisper                          │
-│  • Types result with wtype                                  │
+│                                                              │
+│  Audio Recording                                             │
+│       │                                                      │
+│       ▼                                                      │
+│  Transcription (local faster-whisper OR Groq API)           │
+│       │                                                      │
+│       ▼                                                      │
+│  Transform (optional: Groq LLM or Ollama, streaming)        │
+│       │                                                      │
+│       ▼                                                      │
+│  wtype → types into active window                           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -272,6 +382,41 @@ The model downloads on first use. If it fails:
 # Check internet connection
 # Try downloading manually
 python -c "from faster_whisper import WhisperModel; WhisperModel('tiny')"
+```
+
+### Groq API errors
+
+```bash
+# Check API key is set
+echo $GROQ_API_KEY
+
+# Test API key
+curl -X POST "https://api.groq.com/openai/v1/models" \
+  -H "Authorization: Bearer $GROQ_API_KEY"
+```
+
+### Ollama not working
+
+```bash
+# Check if Ollama is running
+curl http://localhost:11434/api/tags
+
+# Start Ollama
+ollama serve
+
+# Check model is pulled
+ollama list
+```
+
+### Recording gets stuck
+
+If the daemon gets stuck in recording mode:
+```bash
+# Force reset
+./arch_whisper_client.py reset
+
+# Or restart the service
+systemctl --user restart arch-whisper
 ```
 
 ## Uninstall
