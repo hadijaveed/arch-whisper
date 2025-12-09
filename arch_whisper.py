@@ -41,6 +41,7 @@ SOCKET_PATH = "/tmp/arch-whisper.sock"
 CHANNELS = 1
 MAX_RECORDING_SECONDS = 60  # Auto-stop recording after this duration
 TRANSCRIPTION_TIMEOUT = 30  # Timeout for transcription in seconds
+MULTI_TURN_SPACING_WINDOW = 30  # Seconds to consider as same dictation session
 
 
 class ArchWhisper:
@@ -54,6 +55,8 @@ class ArchWhisper:
         self.watchdog_timer = None
         self.cancel_transform = False
         self.shutdown_requested = False
+        self.last_typing_time = 0  # Timestamp of last typed text
+        self.transform_first_chunk = False  # Flag for first chunk of streaming transform
 
     def load_model(self):
         """Load the Whisper model into memory (only for local backend)."""
@@ -320,9 +323,16 @@ class ArchWhisper:
         if not text:
             return
 
+        # Add leading space if within multi-turn window (unless starts with punctuation)
+        now = time.time()
+        if (now - self.last_typing_time < MULTI_TURN_SPACING_WINDOW
+                and text[0] not in '.,!?:;)\'"'):
+            text = ' ' + text
+
         try:
             # Use wtype for Wayland
             subprocess.run(["wtype", "--", text], check=True, capture_output=True)
+            self.last_typing_time = time.time()  # Update timestamp after typing
             self.notify("Typed!", urgency="low", timeout=1000)
             print(f"Typed: {text}")
         except subprocess.CalledProcessError as e:
@@ -336,8 +346,18 @@ class ArchWhisper:
         """Type a chunk of text (for streaming output)."""
         if not text:
             return
+
+        # Add leading space on first chunk if within multi-turn window
+        if self.transform_first_chunk:
+            self.transform_first_chunk = False
+            now = time.time()
+            if (now - self.last_typing_time < MULTI_TURN_SPACING_WINDOW
+                    and text[0] not in '.,!?:;)\'"'):
+                text = ' ' + text
+
         try:
             subprocess.run(["wtype", "--", text], check=True, capture_output=True)
+            self.last_typing_time = time.time()  # Update timestamp after typing
         except Exception as e:
             print(f"wtype chunk error: {e}")
 
@@ -372,6 +392,7 @@ class ArchWhisper:
 
         client = Groq(api_key=api_key)
         self.cancel_transform = False
+        self.transform_first_chunk = True  # For multi-turn spacing
         result = ""
         buffer = ""
 
@@ -411,6 +432,7 @@ class ArchWhisper:
         import requests
 
         self.cancel_transform = False
+        self.transform_first_chunk = True  # For multi-turn spacing
         result = ""
         buffer = ""
 

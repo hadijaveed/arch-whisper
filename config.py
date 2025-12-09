@@ -105,7 +105,7 @@ FILLERS = [
 # TEXT TRANSFORMATION (Grammar/Punctuation Correction)
 # =============================================================================
 # Enable/disable post-transcription text transformation using an LLM
-TRANSFORM_ENABLED = False
+TRANSFORM_ENABLED = True
 
 # Transform backend:
 #   "groq"   - Use Groq LLM API (fast, requires GROQ_API_KEY env var)
