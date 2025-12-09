@@ -105,7 +105,7 @@ FILLERS = [
 # TEXT TRANSFORMATION (Grammar/Punctuation Correction)
 # =============================================================================
 # Enable/disable post-transcription text transformation using an LLM
-TRANSFORM_ENABLED = True
+TRANSFORM_ENABLED = False
 
 # Transform backend:
 #   "groq"   - Use Groq LLM API (fast, requires GROQ_API_KEY env var)
@@ -121,7 +121,7 @@ TRANSFORM_BACKEND = "groq"
 #   "qwen2.5:3b"  - Small (~3GB RAM), fast
 #   "phi3:mini"   - Small (~4GB RAM), good quality
 #   "qwen2.5:7b"  - Medium (~5GB RAM), better quality
-TRANSFORM_MODEL = "openai/gpt-oss-120b"
+TRANSFORM_MODEL = "llama-3.1-8b-instant"
 
 # Prompt for text transformation
 # Use {text} as placeholder for the transcribed text
@@ -129,6 +129,7 @@ TRANSFORM_PROMPT = """Fix grammar, spelling, and punctuation in the following tr
 Add proper capitalization and commas where needed.
 Keep the original meaning and tone.
 Only output the corrected text, nothing else.
-Do not add any explanations or notes.
+Do not add any explanations or notes, your job is to simply correct the text or format the text only
+
 
 Text: {text}"""

@@ -319,35 +319,32 @@ class ArchWhisper:
         return text
 
     def type_text(self, text: str):
-        """Type text into the active window using wtype."""
+        """Type text into the active window using ydotool."""
         if not text:
             return
 
-        # Add leading space if within multi-turn window (unless starts with punctuation)
         now = time.time()
         if (now - self.last_typing_time < MULTI_TURN_SPACING_WINDOW
                 and text[0] not in '.,!?:;)\'"'):
             text = ' ' + text
 
         try:
-            # Use wtype for Wayland
-            subprocess.run(["wtype", "--", text], check=True, capture_output=True)
-            self.last_typing_time = time.time()  # Update timestamp after typing
+            subprocess.run(["ydotool", "type", "-d", "0", "-H", "0", "--", text], check=True, capture_output=True)
+            self.last_typing_time = time.time()
             self.notify("Typed!", urgency="low", timeout=1000)
             print(f"Typed: {text}")
         except subprocess.CalledProcessError as e:
-            print(f"wtype error: {e}")
+            print(f"ydotool error: {e}")
             self.notify("Failed to type text", urgency="critical")
         except FileNotFoundError:
-            print("wtype not found. Please install: sudo pacman -S wtype")
-            self.notify("wtype not found!", urgency="critical")
+            print("ydotool not found. Install: sudo pacman -S ydotool")
+            self.notify("ydotool not found!", urgency="critical")
 
     def _type_chunk(self, text: str):
         """Type a chunk of text (for streaming output)."""
         if not text:
             return
 
-        # Add leading space on first chunk if within multi-turn window
         if self.transform_first_chunk:
             self.transform_first_chunk = False
             now = time.time()
@@ -356,10 +353,10 @@ class ArchWhisper:
                 text = ' ' + text
 
         try:
-            subprocess.run(["wtype", "--", text], check=True, capture_output=True)
-            self.last_typing_time = time.time()  # Update timestamp after typing
+            subprocess.run(["ydotool", "type", "-d", "0", "-H", "0", "--", text], check=True, capture_output=True)
+            self.last_typing_time = time.time()
         except Exception as e:
-            print(f"wtype chunk error: {e}")
+            print(f"ydotool chunk error: {e}")
 
     def _transform_text(self, text: str) -> str:
         """Transform text using LLM (grammar/punctuation correction)."""
