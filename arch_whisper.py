@@ -1,13 +1,40 @@
 #!/usr/bin/env python3
 """arch-whisper: Voice dictation daemon for Linux + Hyprland"""
 
+# Client mode check - must be before heavy imports (numpy, scipy, sounddevice)
+# ruff: noqa: E402
+import socket
+import sys
+
+SOCKET_PATH = "/tmp/arch-whisper.sock"
+
+CLIENT_COMMANDS = {"start", "stop", "status", "ping", "reset"}
+
+if len(sys.argv) > 1 and sys.argv[1] in CLIENT_COMMANDS:
+    def send_command(cmd):
+        try:
+            c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            c.settimeout(2.0)
+            c.connect(SOCKET_PATH)
+            c.send(cmd.encode("utf-8"))
+            r = c.recv(1024).decode("utf-8")
+            c.close()
+            return r
+        except FileNotFoundError:
+            return "error: daemon not running"
+        except socket.timeout:
+            return "error: timeout"
+        except Exception as e:
+            return f"error: {e}"
+    print(send_command(sys.argv[1]))
+    sys.exit(0)
+
+# Daemon mode - import heavy dependencies
 import json
 import os
 import re
 import signal
-import socket
 import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -18,12 +45,19 @@ import sounddevice as sd
 from scipy.io import wavfile
 
 from config import (
-    MODEL_SIZE, COMPUTE_TYPE, LANGUAGE, SAMPLE_RATE, FILLERS,
-    TRANSCRIPTION_BACKEND, GROQ_WHISPER_MODEL,
-    TRANSFORM_ENABLED, TRANSFORM_BACKEND, TRANSFORM_MODEL, TRANSFORM_PROMPT,
+    MODEL_SIZE,
+    COMPUTE_TYPE,
+    LANGUAGE,
+    SAMPLE_RATE,
+    FILLERS,
+    TRANSCRIPTION_BACKEND,
+    GROQ_WHISPER_MODEL,
+    TRANSFORM_ENABLED,
+    TRANSFORM_BACKEND,
+    TRANSFORM_MODEL,
+    TRANSFORM_PROMPT,
 )
 
-SOCKET_PATH = "/tmp/arch-whisper.sock"
 CHANNELS = 1
 MAX_RECORDING_SECONDS = 60
 TRANSCRIPTION_TIMEOUT = 30
@@ -49,8 +83,11 @@ class ArchWhisper:
     def load_model(self):
         if TRANSCRIPTION_BACKEND == "local":
             from faster_whisper import WhisperModel
+
             print(f"Loading faster-whisper model '{MODEL_SIZE}'...")
-            self.model = WhisperModel(MODEL_SIZE, device="cpu", compute_type=COMPUTE_TYPE)
+            self.model = WhisperModel(
+                MODEL_SIZE, device="cpu", compute_type=COMPUTE_TYPE
+            )
             print("Model loaded!")
         else:
             print(f"Using Groq API ({GROQ_WHISPER_MODEL})")
@@ -60,8 +97,18 @@ class ArchWhisper:
     def notify(self, message: str, urgency: str = "normal", timeout: int = 1500):
         try:
             subprocess.run(
-                ["notify-send", "-t", str(timeout), "-u", urgency, "-a", "arch-whisper", message],
-                check=False, capture_output=True,
+                [
+                    "notify-send",
+                    "-t",
+                    str(timeout),
+                    "-u",
+                    urgency,
+                    "-a",
+                    "arch-whisper",
+                    message,
+                ],
+                check=False,
+                capture_output=True,
             )
         except Exception:
             pass
@@ -87,11 +134,16 @@ class ArchWhisper:
         self.recording = True
         self.audio_data = []
         self.stream = sd.InputStream(
-            samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=np.float32,
-            callback=self.audio_callback, blocksize=1024,
+            samplerate=SAMPLE_RATE,
+            channels=CHANNELS,
+            dtype=np.float32,
+            callback=self.audio_callback,
+            blocksize=1024,
         )
         self.stream.start()
-        self.watchdog_timer = threading.Timer(MAX_RECORDING_SECONDS, self._watchdog_timeout)
+        self.watchdog_timer = threading.Timer(
+            MAX_RECORDING_SECONDS, self._watchdog_timeout
+        )
         self.watchdog_timer.start()
         self.notify("Recording...", urgency="low", timeout=10000)
         print("Recording started...")
@@ -149,7 +201,9 @@ class ArchWhisper:
 
     def _transcribe_local(self, audio) -> str:
         segments, _ = self.model.transcribe(
-            audio, language=LANGUAGE, vad_filter=True,
+            audio,
+            language=LANGUAGE,
+            vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
             initial_prompt="Use proper punctuation, capitalization, and complete sentences.",
         )
@@ -159,6 +213,7 @@ class ArchWhisper:
 
     def _transcribe_groq(self, audio) -> str:
         from groq import Groq
+
         api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
             raise ValueError("GROQ_API_KEY not set")
@@ -171,9 +226,11 @@ class ArchWhisper:
             client = Groq(api_key=api_key)
             with open(temp_path, "rb") as f:
                 result = client.audio.transcriptions.create(
-                    file=f, model=GROQ_WHISPER_MODEL,
+                    file=f,
+                    model=GROQ_WHISPER_MODEL,
                     language=LANGUAGE if LANGUAGE else None,
-                    response_format="text", temperature=0.0,
+                    response_format="text",
+                    temperature=0.0,
                     prompt="Use proper punctuation, capitalization, and complete sentences.",
                 )
             text = self.clean_text(result if isinstance(result, str) else result.text)
@@ -236,12 +293,14 @@ class ArchWhisper:
             return ""
         for filler in FILLERS:
             text = re.sub(rf"\b{re.escape(filler)}\b", "", text, flags=re.IGNORECASE)
-        text = re.sub(r'([.!?])([A-Z])', r'\1 \2', text)
-        text = re.sub(r',([A-Za-z])', r', \1', text)
+        text = re.sub(r"([.!?])([A-Z])", r"\1 \2", text)
+        text = re.sub(r",([A-Za-z])", r", \1", text)
         text = re.sub(r"\s+", " ", text).strip()
         if text:
             text = text[0].upper() + text[1:]
-        text = re.sub(r'([.!?])\s+([a-z])', lambda m: m.group(1) + ' ' + m.group(2).upper(), text)
+        text = re.sub(
+            r"([.!?])\s+([a-z])", lambda m: m.group(1) + " " + m.group(2).upper(), text
+        )
         text = re.sub(r"^[,.\s]+", "", text)
         text = re.sub(r"[,\s]+$", "", text)
         return text
@@ -249,12 +308,17 @@ class ArchWhisper:
     def type_text(self, text: str):
         if not text:
             return
-        if (time.time() - self.last_typing_time < MULTI_TURN_SPACING_WINDOW
-                and text[0] not in '.,!?:;)\'"'):
-            text = ' ' + text
+        if (
+            time.time() - self.last_typing_time < MULTI_TURN_SPACING_WINDOW
+            and text[0] not in ".,!?:;)'\""
+        ):
+            text = " " + text
         try:
-            subprocess.run(["ydotool", "type", "-d", "0", "-H", "0", "--", text],
-                           check=True, capture_output=True)
+            subprocess.run(
+                ["ydotool", "type", "-d", "0", "-H", "0", "--", text],
+                check=True,
+                capture_output=True,
+            )
             self.last_typing_time = time.time()
             self.notify("Typed!", urgency="low", timeout=1000)
             print(f"Typed: {text}")
@@ -268,12 +332,17 @@ class ArchWhisper:
             return
         if self.transform_first_chunk:
             self.transform_first_chunk = False
-            if (time.time() - self.last_typing_time < MULTI_TURN_SPACING_WINDOW
-                    and text[0] not in '.,!?:;)\'"'):
-                text = ' ' + text
+            if (
+                time.time() - self.last_typing_time < MULTI_TURN_SPACING_WINDOW
+                and text[0] not in ".,!?:;)'\""
+            ):
+                text = " " + text
         try:
-            subprocess.run(["ydotool", "type", "-d", "0", "-H", "0", "--", text],
-                           check=True, capture_output=True)
+            subprocess.run(
+                ["ydotool", "type", "-d", "0", "-H", "0", "--", text],
+                check=True,
+                capture_output=True,
+            )
             self.last_typing_time = time.time()
         except Exception:
             pass
@@ -293,7 +362,7 @@ class ArchWhisper:
             if content:
                 result += content
                 buffer += content
-                if buffer and buffer[-1] in ' .,!?\n:;':
+                if buffer and buffer[-1] in " .,!?\n:;":
                     self._type_chunk(buffer)
                     buffer = ""
 
@@ -319,6 +388,7 @@ class ArchWhisper:
 
     def _transform_with_groq(self, prompt: str) -> str:
         from groq import Groq
+
         api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
             raise ValueError("GROQ_API_KEY not set")
@@ -327,21 +397,23 @@ class ArchWhisper:
         stream = client.chat.completions.create(
             model=TRANSFORM_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            stream=True, max_tokens=500, temperature=0.3,
+            stream=True,
+            max_tokens=500,
+            temperature=0.3,
         )
-        result = self._stream_transform(
-            stream, lambda c: c.choices[0].delta.content
-        )
+        result = self._stream_transform(stream, lambda c: c.choices[0].delta.content)
         print(f"Transformed: {result}")
         return result
 
     def _transform_with_ollama(self, prompt: str) -> str:
         import requests
+
         try:
             response = requests.post(
                 "http://localhost:11434/api/generate",
                 json={"model": TRANSFORM_MODEL, "prompt": prompt, "stream": True},
-                stream=True, timeout=30,
+                stream=True,
+                timeout=30,
             )
             response.raise_for_status()
 
@@ -418,14 +490,9 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 
-def main():
-    global daemon
+if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     daemon = ArchWhisper()
     daemon.load_model()
     daemon.run_server()
-
-
-if __name__ == "__main__":
-    main()

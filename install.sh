@@ -49,11 +49,10 @@ echo "Installing Python dependencies..."
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# Make scripts executable
+# Make script executable
 echo ""
-echo "Making scripts executable..."
+echo "Making script executable..."
 chmod +x arch_whisper.py
-chmod +x arch_whisper_client.py
 
 # Install systemd service
 echo ""
@@ -92,8 +91,8 @@ if [ -f "$HYPRLAND_BINDINGS" ]; then
         cat >> "$HYPRLAND_BINDINGS" << EOF
 
 # arch-whisper voice dictation ($KEYBIND_MOD+$KEYBIND_KEY: hold to record, release to transcribe)
-bindd = $KEYBIND_MOD, $KEYBIND_KEY, Start voice dictation, exec, $SCRIPT_DIR/arch_whisper_client.py start
-bindr = $KEYBIND_MOD, $KEYBIND_KEY, exec, $SCRIPT_DIR/arch_whisper_client.py stop
+bindd = $KEYBIND_MOD, $KEYBIND_KEY, Start voice dictation, exec, $SCRIPT_DIR/arch_whisper.py start
+bindr = $KEYBIND_MOD, $KEYBIND_KEY, exec, $SCRIPT_DIR/arch_whisper.py stop
 EOF
         echo "Added bindings to $HYPRLAND_BINDINGS"
     else
@@ -104,8 +103,8 @@ else
     echo "Warning: $HYPRLAND_BINDINGS not found."
     echo "Add these bindings manually to your Hyprland config:"
     echo ""
-    echo "bindd = $KEYBIND_MOD, $KEYBIND_KEY, Start voice dictation, exec, $SCRIPT_DIR/arch_whisper_client.py start"
-    echo "bindr = $KEYBIND_MOD, $KEYBIND_KEY, exec, $SCRIPT_DIR/arch_whisper_client.py stop"
+    echo "bindd = $KEYBIND_MOD, $KEYBIND_KEY, Start voice dictation, exec, $SCRIPT_DIR/arch_whisper.py start"
+    echo "bindr = $KEYBIND_MOD, $KEYBIND_KEY, exec, $SCRIPT_DIR/arch_whisper.py stop"
 fi
 
 echo ""

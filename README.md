@@ -117,9 +117,9 @@ The installer will:
    pip install -r requirements.txt
    ```
 
-3. **Make scripts executable:**
+3. **Make script executable:**
    ```bash
-   chmod +x arch_whisper.py arch_whisper_client.py
+   chmod +x arch_whisper.py
    ```
 
 4. **Create systemd service** at `~/.config/systemd/user/arch-whisper.service`:
@@ -148,8 +148,8 @@ The installer will:
 
 6. **Add Hyprland bindings** to `~/.config/hypr/bindings.conf`:
    ```
-   bindd = SUPER, Z, Start voice dictation, exec, /path/to/arch_whisper_client.py start
-   bindr = SUPER, Z, exec, /path/to/arch_whisper_client.py stop
+   bindd = SUPER, Z, Start voice dictation, exec, /path/to/arch_whisper.py start
+   bindr = SUPER, Z, exec, /path/to/arch_whisper.py stop
    ```
 
 7. **Reload Hyprland:**
@@ -178,8 +178,8 @@ nano config.py   # or use your preferred editor
 
 To change after installation, edit `~/.config/hypr/bindings.conf`:
 ```
-bindd = ALT, D, Start voice dictation, exec, /path/to/arch_whisper_client.py start
-bindr = ALT, D, exec, /path/to/arch_whisper_client.py stop
+bindd = ALT, D, Start voice dictation, exec, /path/to/arch_whisper.py start
+bindr = ALT, D, exec, /path/to/arch_whisper.py stop
 ```
 
 Then reload: `hyprctl reload`
@@ -286,13 +286,13 @@ FILLERS = [
 
 ```bash
 # Check if daemon is running
-./arch_whisper_client.py ping
+./arch_whisper.py ping
 
 # View current state (idle/recording/transcribing)
-./arch_whisper_client.py status
+./arch_whisper.py status
 
 # Force reset if stuck
-./arch_whisper_client.py reset
+./arch_whisper.py reset
 ```
 
 ### Service Management
@@ -370,7 +370,7 @@ ydotool type "hello world"
 
 ```bash
 # Force reset
-./arch_whisper_client.py reset
+./arch_whisper.py reset
 
 # Or restart service
 systemctl --user restart arch-whisper
@@ -414,15 +414,8 @@ python --version
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                         Hyprland                            │
-│  Super+Z pressed  → exec arch_whisper_client.py start       │
-│  Super+Z released → exec arch_whisper_client.py stop        │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  arch_whisper_client.py                     │
-│            Lightweight client, sends commands               │
-│                   via Unix socket                           │
+│  Super+Z pressed  → exec arch_whisper.py start              │
+│  Super+Z released → exec arch_whisper.py stop               │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -449,8 +442,7 @@ python --version
 
 | File | Purpose |
 |------|---------|
-| `arch_whisper.py` | Main daemon: loads model, records, transcribes, types |
-| `arch_whisper_client.py` | CLI client: sends commands to daemon |
+| `arch_whisper.py` | Daemon + CLI: runs server (no args) or sends commands (with args) |
 | `config.py` | All user settings |
 | `install.sh` | Automated installer |
 
