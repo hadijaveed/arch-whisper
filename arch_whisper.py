@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
-"""
-arch-whisper: Local voice dictation daemon for Arch Linux + Hyprland
-Press Super+Z to record, release to transcribe and type.
-"""
+"""arch-whisper: Voice dictation daemon for Linux + Hyprland"""
 
-import concurrent.futures
-import io
 import json
 import os
 import re
@@ -22,26 +17,17 @@ import numpy as np
 import sounddevice as sd
 from scipy.io import wavfile
 
-# Import configuration from config.py
 from config import (
-    MODEL_SIZE,
-    COMPUTE_TYPE,
-    LANGUAGE,
-    SAMPLE_RATE,
-    FILLERS,
-    TRANSCRIPTION_BACKEND,
-    GROQ_WHISPER_MODEL,
-    TRANSFORM_ENABLED,
-    TRANSFORM_BACKEND,
-    TRANSFORM_MODEL,
-    TRANSFORM_PROMPT,
+    MODEL_SIZE, COMPUTE_TYPE, LANGUAGE, SAMPLE_RATE, FILLERS,
+    TRANSCRIPTION_BACKEND, GROQ_WHISPER_MODEL,
+    TRANSFORM_ENABLED, TRANSFORM_BACKEND, TRANSFORM_MODEL, TRANSFORM_PROMPT,
 )
 
 SOCKET_PATH = "/tmp/arch-whisper.sock"
 CHANNELS = 1
-MAX_RECORDING_SECONDS = 60  # Auto-stop recording after this duration
-TRANSCRIPTION_TIMEOUT = 30  # Timeout for transcription in seconds
-MULTI_TURN_SPACING_WINDOW = 30  # Seconds to consider as same dictation session
+MAX_RECORDING_SECONDS = 60
+TRANSCRIPTION_TIMEOUT = 30
+MULTI_TURN_SPACING_WINDOW = 30
 
 
 class ArchWhisper:
@@ -52,222 +38,162 @@ class ArchWhisper:
         self.audio_data = []
         self.stream = None
         self.lock = threading.Lock()
-        self.processing_lock = threading.Lock()  # Serialize transcription/typing
+        self.processing_lock = threading.Lock()
         self.watchdog_timer = None
         self.cancel_transform = False
         self.shutdown_requested = False
         self.last_typing_time = 0
         self.transform_first_chunk = False
-        self.pending_start = False  # Queue recording request
+        self.pending_start = False
 
     def load_model(self):
-        """Load the Whisper model into memory (only for local backend)."""
         if TRANSCRIPTION_BACKEND == "local":
             from faster_whisper import WhisperModel
-
-            print(f"Loading faster-whisper model '{MODEL_SIZE}' with {COMPUTE_TYPE}...")
+            print(f"Loading faster-whisper model '{MODEL_SIZE}'...")
             self.model = WhisperModel(MODEL_SIZE, device="cpu", compute_type=COMPUTE_TYPE)
-            print("Model loaded successfully!")
+            print("Model loaded!")
         else:
-            print(f"Using Groq API for transcription (model: {GROQ_WHISPER_MODEL})")
-            # Verify API key is set
+            print(f"Using Groq API ({GROQ_WHISPER_MODEL})")
             if not os.environ.get("GROQ_API_KEY"):
-                print("WARNING: GROQ_API_KEY environment variable not set!")
-                print("Set it with: export GROQ_API_KEY='your_key_here'")
+                print("WARNING: GROQ_API_KEY not set")
 
     def notify(self, message: str, urgency: str = "normal", timeout: int = 1500):
-        """Send a desktop notification."""
         try:
             subprocess.run(
-                [
-                    "notify-send",
-                    "-t",
-                    str(timeout),
-                    "-u",
-                    urgency,
-                    "-a",
-                    "arch-whisper",
-                    message,
-                ],
-                check=False,
-                capture_output=True,
+                ["notify-send", "-t", str(timeout), "-u", urgency, "-a", "arch-whisper", message],
+                check=False, capture_output=True,
             )
-        except Exception as e:
-            print(f"Notification error: {e}")
+        except Exception:
+            pass
 
     def audio_callback(self, indata, frames, time_info, status):
-        """Callback for audio stream - collect audio chunks."""
-        if status:
-            print(f"Audio status: {status}")
         if self.recording:
             self.audio_data.append(indata.copy())
 
     def start_recording(self):
-        """Start recording audio from the microphone."""
         with self.lock:
             if self.recording:
                 return
-
-            # If still processing, queue the request silently
             if self.transcribing:
                 self.pending_start = True
-                print("Queued recording (still processing previous)...")
                 return
-
             self._do_start_recording()
 
     def _do_start_recording(self):
-        """Actually start recording (must be called with lock held)."""
         self.pending_start = False
         self.cancel_transform = True
-
         if self.watchdog_timer:
             self.watchdog_timer.cancel()
-            self.watchdog_timer = None
-
         self.recording = True
         self.audio_data = []
-
         self.stream = sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=CHANNELS,
-            dtype=np.float32,
-            callback=self.audio_callback,
-            blocksize=1024,
+            samplerate=SAMPLE_RATE, channels=CHANNELS, dtype=np.float32,
+            callback=self.audio_callback, blocksize=1024,
         )
         self.stream.start()
-
-        self.watchdog_timer = threading.Timer(
-            MAX_RECORDING_SECONDS, self._watchdog_timeout
-        )
+        self.watchdog_timer = threading.Timer(MAX_RECORDING_SECONDS, self._watchdog_timeout)
         self.watchdog_timer.start()
-
         self.notify("Recording...", urgency="low", timeout=10000)
         print("Recording started...")
 
     def stop_recording(self) -> str:
-        """Stop recording and return transcribed text."""
         with self.lock:
             if not self.recording:
                 return ""
-
             self.recording = False
-
-            # Cancel watchdog timer
             if self.watchdog_timer:
                 self.watchdog_timer.cancel()
                 self.watchdog_timer = None
-
-            # Stop and close audio stream
             if self.stream:
                 self.stream.stop()
                 self.stream.close()
                 self.stream = None
-
-            # Get recorded audio
             if not self.audio_data:
-                print("No audio recorded")
                 return ""
-
             audio = np.concatenate(self.audio_data, axis=0).flatten()
             self.audio_data = []
 
-        print(f"Recording stopped. Audio length: {len(audio) / SAMPLE_RATE:.2f}s")
-
-        # Check minimum audio length
-        if len(audio) < SAMPLE_RATE * 0.3:  # Less than 0.3 seconds
-            print("Audio too short, skipping transcription")
+        print(f"Recording stopped. {len(audio) / SAMPLE_RATE:.2f}s")
+        if len(audio) < SAMPLE_RATE * 0.3:
             return ""
 
-        # Transcribe with timeout
+        return self._transcribe(audio)
+
+    def _transcribe(self, audio) -> str:
         print("Transcribing...")
-        try:
-            with concurrent.futures.ThreadPoolExecutor() as executor:
+        result = [None]
+        error = [None]
+
+        def do_transcribe():
+            try:
                 if TRANSCRIPTION_BACKEND == "local":
-                    future = executor.submit(self._transcribe_local, audio)
+                    result[0] = self._transcribe_local(audio)
                 else:
-                    future = executor.submit(self._transcribe_groq, audio)
-                text = future.result(timeout=TRANSCRIPTION_TIMEOUT)
-                return text
-        except concurrent.futures.TimeoutError:
-            print(f"Transcription timeout after {TRANSCRIPTION_TIMEOUT}s!")
+                    result[0] = self._transcribe_groq(audio)
+            except Exception as e:
+                error[0] = e
+
+        thread = threading.Thread(target=do_transcribe)
+        thread.start()
+        thread.join(timeout=TRANSCRIPTION_TIMEOUT)
+
+        if thread.is_alive():
+            print(f"Transcription timeout!")
             self.notify("Transcription timed out", urgency="critical")
             return ""
-        except Exception as e:
-            print(f"Transcription error: {e}")
-            self.notify(f"Transcription error: {e}", urgency="critical")
+        if error[0]:
+            print(f"Transcription error: {error[0]}")
+            self.notify(f"Error: {error[0]}", urgency="critical")
             return ""
+        return result[0] or ""
 
     def _transcribe_local(self, audio) -> str:
-        """Transcribe audio using local faster-whisper model."""
-        segments, info = self.model.transcribe(
-            audio,
-            language=LANGUAGE,
-            vad_filter=True,  # Filter out silence
+        segments, _ = self.model.transcribe(
+            audio, language=LANGUAGE, vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
             initial_prompt="Use proper punctuation, capitalization, and complete sentences.",
         )
-
-        text = " ".join([segment.text for segment in segments])
-        text = self.clean_text(text)
-
-        print(f"Transcribed (local): {text}")
+        text = self.clean_text(" ".join([s.text for s in segments]))
+        print(f"Transcribed: {text}")
         return text
 
     def _transcribe_groq(self, audio) -> str:
-        """Transcribe audio using Groq Whisper API."""
         from groq import Groq
-
         api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
-            raise ValueError("GROQ_API_KEY environment variable not set")
+            raise ValueError("GROQ_API_KEY not set")
 
-        # Save audio to temporary WAV file (Groq requires a file)
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             temp_path = f.name
-            # Convert float32 audio to int16 for WAV
-            audio_int16 = (audio * 32767).astype(np.int16)
-            wavfile.write(temp_path, SAMPLE_RATE, audio_int16)
+            wavfile.write(temp_path, SAMPLE_RATE, (audio * 32767).astype(np.int16))
 
         try:
             client = Groq(api_key=api_key)
-            with open(temp_path, "rb") as audio_file:
-                transcription = client.audio.transcriptions.create(
-                    file=audio_file,
-                    model=GROQ_WHISPER_MODEL,
+            with open(temp_path, "rb") as f:
+                result = client.audio.transcriptions.create(
+                    file=f, model=GROQ_WHISPER_MODEL,
                     language=LANGUAGE if LANGUAGE else None,
-                    response_format="text",
-                    temperature=0.0,
+                    response_format="text", temperature=0.0,
                     prompt="Use proper punctuation, capitalization, and complete sentences.",
                 )
-
-            text = transcription if isinstance(transcription, str) else transcription.text
-            text = self.clean_text(text)
-
-            print(f"Transcribed (Groq): {text}")
+            text = self.clean_text(result if isinstance(result, str) else result.text)
+            print(f"Transcribed: {text}")
             return text
         finally:
-            # Clean up temp file
             os.unlink(temp_path)
 
     def _watchdog_timeout(self):
-        """Auto-stop recording if max duration exceeded."""
         if self.recording:
-            print(f"Recording exceeded {MAX_RECORDING_SECONDS}s, auto-stopping")
-            self.notify("Recording auto-stopped (max duration)", urgency="normal")
+            print(f"Auto-stopping (max {MAX_RECORDING_SECONDS}s)")
+            self.notify("Recording auto-stopped", urgency="normal")
             threading.Thread(target=self._process_recording, daemon=True).start()
 
     def _process_recording(self):
-        """Process recording in background thread."""
-        # Use processing lock to prevent concurrent processing
         if not self.processing_lock.acquire(blocking=False):
-            print("Already processing, skipping...")
             return
-
         try:
             with self.lock:
                 self.transcribing = True
-
             text = self.stop_recording()
             if text:
                 if TRANSFORM_ENABLED:
@@ -276,19 +202,17 @@ class ArchWhisper:
                 else:
                     self.type_text(text)
         except Exception as e:
-            print(f"Processing error: {e}")
+            print(f"Error: {e}")
             self.notify(f"Error: {e}", urgency="critical")
         finally:
             with self.lock:
                 self.transcribing = False
-                # Check for pending recording request
                 if self.pending_start:
                     self._do_start_recording()
             self.processing_lock.release()
 
     def _force_reset(self):
-        """Force reset all state."""
-        print("Force resetting state...")
+        print("Resetting...")
         self.cancel_transform = True
         with self.lock:
             self.recording = False
@@ -308,205 +232,137 @@ class ArchWhisper:
         self.notify("Reset!", urgency="low", timeout=1000)
 
     def clean_text(self, text: str) -> str:
-        """Remove filler words and clean up text."""
         if not text:
             return ""
-
-        # Remove filler words
         for filler in FILLERS:
-            # Word boundary matching for fillers
-            pattern = rf"\b{re.escape(filler)}\b"
-            text = re.sub(pattern, "", text, flags=re.IGNORECASE)
-
-        # Fix missing spaces after sentence-ending punctuation followed by capital letter
+            text = re.sub(rf"\b{re.escape(filler)}\b", "", text, flags=re.IGNORECASE)
         text = re.sub(r'([.!?])([A-Z])', r'\1 \2', text)
-
-        # Fix missing spaces after commas
         text = re.sub(r',([A-Za-z])', r', \1', text)
-
-        # Clean up whitespace
-        text = re.sub(r"\s+", " ", text)
-        text = text.strip()
-
-        # Capitalize first letter
+        text = re.sub(r"\s+", " ", text).strip()
         if text:
             text = text[0].upper() + text[1:]
-
-        # Capitalize after sentence endings
         text = re.sub(r'([.!?])\s+([a-z])', lambda m: m.group(1) + ' ' + m.group(2).upper(), text)
-
-        # Remove leading/trailing punctuation artifacts
         text = re.sub(r"^[,.\s]+", "", text)
         text = re.sub(r"[,\s]+$", "", text)
-
         return text
 
     def type_text(self, text: str):
-        """Type text into the active window using ydotool."""
         if not text:
             return
-
-        now = time.time()
-        if (now - self.last_typing_time < MULTI_TURN_SPACING_WINDOW
+        if (time.time() - self.last_typing_time < MULTI_TURN_SPACING_WINDOW
                 and text[0] not in '.,!?:;)\'"'):
             text = ' ' + text
-
         try:
-            subprocess.run(["ydotool", "type", "-d", "0", "-H", "0", "--", text], check=True, capture_output=True)
+            subprocess.run(["ydotool", "type", "-d", "0", "-H", "0", "--", text],
+                           check=True, capture_output=True)
             self.last_typing_time = time.time()
             self.notify("Typed!", urgency="low", timeout=1000)
             print(f"Typed: {text}")
-        except subprocess.CalledProcessError as e:
-            print(f"ydotool error: {e}")
-            self.notify("Failed to type text", urgency="critical")
         except FileNotFoundError:
-            print("ydotool not found. Install: sudo pacman -S ydotool")
             self.notify("ydotool not found!", urgency="critical")
+        except subprocess.CalledProcessError:
+            self.notify("Failed to type", urgency="critical")
 
     def _type_chunk(self, text: str):
-        """Type a chunk of text (for streaming output)."""
         if not text:
             return
-
         if self.transform_first_chunk:
             self.transform_first_chunk = False
-            now = time.time()
-            if (now - self.last_typing_time < MULTI_TURN_SPACING_WINDOW
+            if (time.time() - self.last_typing_time < MULTI_TURN_SPACING_WINDOW
                     and text[0] not in '.,!?:;)\'"'):
                 text = ' ' + text
-
         try:
-            subprocess.run(["ydotool", "type", "-d", "0", "-H", "0", "--", text], check=True, capture_output=True)
+            subprocess.run(["ydotool", "type", "-d", "0", "-H", "0", "--", text],
+                           check=True, capture_output=True)
             self.last_typing_time = time.time()
-        except Exception as e:
-            print(f"ydotool chunk error: {e}")
+        except Exception:
+            pass
+
+    def _stream_transform(self, stream_iter, get_content):
+        """Common streaming logic for transform backends."""
+        self.cancel_transform = False
+        self.transform_first_chunk = True
+        result = ""
+        buffer = ""
+
+        for item in stream_iter:
+            if self.cancel_transform or self.shutdown_requested:
+                print("Transform cancelled")
+                break
+            content = get_content(item)
+            if content:
+                result += content
+                buffer += content
+                if buffer and buffer[-1] in ' .,!?\n:;':
+                    self._type_chunk(buffer)
+                    buffer = ""
+
+        if buffer and not self.cancel_transform:
+            self._type_chunk(buffer)
+        return result
 
     def _transform_text(self, text: str) -> str:
-        """Transform text using LLM (grammar/punctuation correction)."""
         if not TRANSFORM_ENABLED or not text:
             return text
-
-        print("Transforming text with LLM...")
+        print("Transforming...")
         prompt = TRANSFORM_PROMPT.format(text=text)
-
         try:
             if TRANSFORM_BACKEND == "groq":
                 return self._transform_with_groq(prompt)
             elif TRANSFORM_BACKEND == "ollama":
                 return self._transform_with_ollama(prompt)
-            else:
-                print(f"Unknown transform backend: {TRANSFORM_BACKEND}")
-                return text
+            return text
         except Exception as e:
             print(f"Transform error: {e}")
             self.notify(f"Transform error: {e}", urgency="critical")
             return text
 
     def _transform_with_groq(self, prompt: str) -> str:
-        """Transform text using Groq LLM with streaming."""
         from groq import Groq
-
         api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
-            raise ValueError("GROQ_API_KEY environment variable not set")
+            raise ValueError("GROQ_API_KEY not set")
 
         client = Groq(api_key=api_key)
-        self.cancel_transform = False
-        self.transform_first_chunk = True  # For multi-turn spacing
-        result = ""
-        buffer = ""
-
         stream = client.chat.completions.create(
             model=TRANSFORM_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            stream=True,
-            max_tokens=500,
-            temperature=0.3,
+            stream=True, max_tokens=500, temperature=0.3,
         )
-
-        for chunk in stream:
-            # Check for cancellation or shutdown
-            if self.cancel_transform or self.shutdown_requested:
-                print("Transform cancelled")
-                break
-
-            if chunk.choices[0].delta.content:
-                content = chunk.choices[0].delta.content
-                result += content
-                buffer += content
-
-                # Type when we have a complete word (reduces subprocess calls)
-                if buffer and buffer[-1] in ' .,!?\n:;':
-                    self._type_chunk(buffer)
-                    buffer = ""
-
-        # Type remaining buffer
-        if buffer and not self.cancel_transform:
-            self._type_chunk(buffer)
-
-        print(f"Transformed (Groq): {result}")
+        result = self._stream_transform(
+            stream, lambda c: c.choices[0].delta.content
+        )
+        print(f"Transformed: {result}")
         return result
 
     def _transform_with_ollama(self, prompt: str) -> str:
-        """Transform text using local Ollama with streaming."""
         import requests
-
-        self.cancel_transform = False
-        self.transform_first_chunk = True  # For multi-turn spacing
-        result = ""
-        buffer = ""
-
         try:
             response = requests.post(
                 "http://localhost:11434/api/generate",
-                json={
-                    "model": TRANSFORM_MODEL,
-                    "prompt": prompt,
-                    "stream": True,
-                },
-                stream=True,
-                timeout=30,
+                json={"model": TRANSFORM_MODEL, "prompt": prompt, "stream": True},
+                stream=True, timeout=30,
             )
             response.raise_for_status()
 
-            for line in response.iter_lines():
-                # Check for cancellation or shutdown
-                if self.cancel_transform or self.shutdown_requested:
-                    print("Transform cancelled")
-                    break
-
+            def get_content(line):
                 if line:
                     data = json.loads(line)
-                    if "response" in data:
-                        content = data["response"]
-                        result += content
-                        buffer += content
+                    return data.get("response", "")
+                return ""
 
-                        # Type when we have a complete word (reduces subprocess calls)
-                        if buffer and buffer[-1] in ' .,!?\n:;':
-                            self._type_chunk(buffer)
-                            buffer = ""
-
-            # Type remaining buffer
-            if buffer and not self.cancel_transform:
-                self._type_chunk(buffer)
-
-            print(f"Transformed (Ollama): {result}")
+            result = self._stream_transform(response.iter_lines(), get_content)
+            print(f"Transformed: {result}")
             return result
-        except requests.exceptions.ConnectionError:
-            raise Exception("Ollama not running. Start with: ollama serve")
         except Exception as e:
             raise Exception(f"Ollama error: {e}")
 
     def handle_command(self, command: str) -> str:
-        """Handle a command from the client."""
         command = command.strip().lower()
-
         if command == "start":
             self.start_recording()
             return "ok"
         elif command == "stop":
-            # Process recording in background thread so socket stays responsive
             threading.Thread(target=self._process_recording, daemon=True).start()
             return "ok"
         elif command == "reset":
@@ -517,28 +373,20 @@ class ArchWhisper:
                 return "recording"
             elif self.transcribing:
                 return "transcribing"
-            else:
-                return "idle"
+            return "idle"
         elif command == "ping":
             return "pong"
-        else:
-            return f"unknown command: {command}"
+        return f"unknown: {command}"
 
     def run_server(self):
-        """Run the Unix socket server."""
-        # Remove existing socket
         socket_path = Path(SOCKET_PATH)
         if socket_path.exists():
             socket_path.unlink()
 
-        # Create socket
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(SOCKET_PATH)
-        server.listen(5)  # Allow multiple pending connections
-
-        # Make socket accessible
+        server.listen(5)
         os.chmod(SOCKET_PATH, 0o666)
-
         print(f"Listening on {SOCKET_PATH}")
 
         try:
@@ -547,8 +395,7 @@ class ArchWhisper:
                 try:
                     data = conn.recv(1024).decode("utf-8")
                     if data:
-                        response = self.handle_command(data)
-                        conn.send(response.encode("utf-8"))
+                        conn.send(self.handle_command(data).encode("utf-8"))
                 except Exception as e:
                     print(f"Connection error: {e}")
                 finally:
@@ -562,25 +409,19 @@ daemon = None
 
 
 def signal_handler(signum, frame):
-    """Handle shutdown signals."""
     global daemon
     print("\nShutting down...")
     if daemon:
         daemon.shutdown_requested = True
         daemon.cancel_transform = True
-    socket_path = Path(SOCKET_PATH)
-    socket_path.unlink(missing_ok=True)
+    Path(SOCKET_PATH).unlink(missing_ok=True)
     sys.exit(0)
 
 
 def main():
     global daemon
-
-    # Setup signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-
-    # Create and run daemon
     daemon = ArchWhisper()
     daemon.load_model()
     daemon.run_server()

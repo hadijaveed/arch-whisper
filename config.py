@@ -16,7 +16,7 @@ Edit these values to customize your setup, then restart the service:
 #   KEYBIND_MOD = "CTRL SHIFT"  KEYBIND_KEY = "V"     → Ctrl+Shift+V
 
 KEYBIND_MOD = "SUPER"
-KEYBIND_KEY = "z"
+KEYBIND_KEY = "Z"
 
 # =============================================================================
 # TRANSCRIPTION BACKEND
@@ -25,7 +25,7 @@ KEYBIND_KEY = "z"
 # "groq"  - Use Groq Whisper API (requires GROQ_API_KEY env var)
 # TRANSCRIPTION_BACKEND = "local"
 
-TRANSCRIPTION_BACKEND = "local"
+TRANSCRIPTION_BACKEND = "groq"
 
 # =============================================================================
 # LOCAL WHISPER SETTINGS (only used if TRANSCRIPTION_BACKEND = "local")
@@ -37,7 +37,7 @@ TRANSCRIPTION_BACKEND = "local"
 #   medium (~1.5 GB) - Slow, excellent accuracy
 #   large  (~3 GB)   - Slowest, best accuracy (requires lots of RAM)
 
-MODEL_SIZE = "small"
+MODEL_SIZE = "base"
 
 # Compute type:
 #   "int8"    - Best for CPU (faster, less memory)
