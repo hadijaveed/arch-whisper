@@ -107,26 +107,51 @@ else
     echo "bindr = $KEYBIND_MOD, $KEYBIND_KEY, exec, $SCRIPT_DIR/arch_whisper.py stop"
 fi
 
+# Start the service and reload Hyprland
+echo ""
+echo "Starting arch-whisper service..."
+systemctl --user start arch-whisper
+
+echo "Reloading Hyprland config..."
+hyprctl reload
+
 echo ""
 echo "=== Installation complete! ==="
 echo ""
-echo "To start arch-whisper:"
-echo "  systemctl --user start arch-whisper"
+echo "Test it now: Hold $KEYBIND_MOD+$KEYBIND_KEY, speak, then release."
 echo ""
-echo "To reload Hyprland config:"
-echo "  hyprctl reload"
+read -p "Did it work? (y/n): " TEST_RESULT
+
+if [[ "$TEST_RESULT" != "y" && "$TEST_RESULT" != "Y" ]]; then
+    echo ""
+    echo "=== Troubleshooting ==="
+    echo ""
+    echo "Check service status:"
+    echo "  systemctl --user status arch-whisper"
+    echo ""
+    echo "View logs:"
+    echo "  journalctl --user -u arch-whisper -f"
+    echo ""
+    echo "Check ydotool is running:"
+    echo "  systemctl --user status ydotool"
+    echo ""
+    echo "Test daemon manually:"
+    echo "  $SCRIPT_DIR/arch_whisper.py ping"
+    echo ""
+    echo "Force reset if stuck:"
+    echo "  $SCRIPT_DIR/arch_whisper.py reset"
+    echo ""
+fi
+
 echo ""
-echo "Usage:"
+echo "=== Usage ==="
 echo "  Press and hold $KEYBIND_MOD+$KEYBIND_KEY to record"
-echo "  Release $KEYBIND_MOD+$KEYBIND_KEY to transcribe and type"
+echo "  Release to transcribe and type"
 echo ""
-echo "Configuration:"
+echo "=== Configuration ==="
 echo "  Edit config.py to change model, language, backend, or filler words"
 echo "  Edit ~/.config/hypr/bindings.conf to change the keybinding"
-echo ""
-echo "Check status:"
-echo "  systemctl --user status arch-whisper"
-echo "  journalctl --user -u arch-whisper -f"
+echo "  After changes: systemctl --user restart arch-whisper"
 echo ""
 echo "=== Optional: Groq Cloud API ==="
 echo "For faster transcription using Groq cloud:"
