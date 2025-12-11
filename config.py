@@ -86,20 +86,12 @@ SAMPLE_RATE = 16000
 # Add or remove words as needed for your speaking style.
 
 FILLERS = [
-    # "um",
-    # "uh",
-    # "uhh",
-    # "umm",
-    # "hmm",
-    # "hm",
-    # "like",
-    # "you know",
-    # "basically",
-    # "actually",
-    # "i mean",
-    # "sort of",
-    # "kind of",
-    # "right",
+    "um",
+    "uh",
+    "uhh",
+    "umm",
+    "hmm",
+    "hm",
 ]
 
 # =============================================================================
@@ -122,7 +114,7 @@ TRANSFORM_BACKEND = "groq"
 #   "qwen2.5:3b"  - Small (~3GB RAM), fast
 #   "phi3:mini"   - Small (~4GB RAM), good quality
 #   "qwen2.5:7b"  - Medium (~5GB RAM), better quality
-TRANSFORM_MODEL = "llama-3.1-8b-instant"
+TRANSFORM_MODEL = "meta-llama/llama-4-maverick-17b-128e-instruct"
 
 # Prompt for text transformation
 # Use {text} as placeholder for the transcribed text
@@ -132,5 +124,6 @@ Keep the original meaning and tone.
 Only output the corrected text, nothing else.
 Do not add any explanations or notes, your job is to simply correct the text or format the text only
 
+Again remember there is no modification to the output. Output remains as is and consistent
 
 Text: {text}"""
