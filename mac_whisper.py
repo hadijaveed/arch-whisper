@@ -350,6 +350,24 @@ class MacWhisper:
         text = re.sub(r"[,\s]+$", "", text)
         return text
 
+    def _save_clipboard(self) -> bytes | None:
+        """Save current clipboard contents."""
+        try:
+            result = subprocess.run(["pbpaste"], capture_output=True)
+            return result.stdout if result.returncode == 0 else None
+        except Exception:
+            return None
+
+    def _restore_clipboard(self, data: bytes | None):
+        """Restore clipboard contents."""
+        if data is None:
+            return
+        try:
+            process = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
+            process.communicate(input=data)
+        except Exception:
+            pass
+
     def type_text(self, text: str):
         """Type text using clipboard paste (more reliable than keystroke)."""
         if not text:
@@ -357,6 +375,8 @@ class MacWhisper:
         if time.time() - self.last_typing_time < MULTI_TURN_SPACING_WINDOW and text[0] not in ".,!?:;)'\"":
             text = " " + text
         try:
+            # Save original clipboard
+            original_clipboard = self._save_clipboard()
             # Copy to clipboard
             process = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
             process.communicate(input=text.encode("utf-8"))
@@ -366,6 +386,9 @@ class MacWhisper:
                 check=True, capture_output=True,
             )
             self.last_typing_time = time.time()
+            # Restore original clipboard after a brief delay
+            time.sleep(0.1)
+            self._restore_clipboard(original_clipboard)
             self.notify("Typed!")
             print(f"Typed: {text}")
         except subprocess.CalledProcessError as e:
@@ -396,6 +419,8 @@ class MacWhisper:
         self.transform_first_chunk = True
         result = ""
         buffer = ""
+        # Save clipboard once at start of streaming
+        original_clipboard = self._save_clipboard()
 
         for item in stream_iter:
             if self.cancel_transform or self.shutdown_requested:
@@ -411,6 +436,9 @@ class MacWhisper:
 
         if buffer and not self.cancel_transform:
             self._type_chunk(buffer)
+        # Restore original clipboard after streaming completes
+        time.sleep(0.1)
+        self._restore_clipboard(original_clipboard)
         return result
 
     def _transform_text(self, text: str) -> str:
