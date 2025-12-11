@@ -25,6 +25,7 @@ KEYBIND_KEY = "z"
 # "groq"  - Use Groq Whisper API (requires GROQ_API_KEY env var)
 # TRANSCRIPTION_BACKEND = "local"
 
+# TRANSCRIPTION_BACKEND = "groq"
 TRANSCRIPTION_BACKEND = "groq"
 
 # =============================================================================
@@ -37,14 +38,14 @@ TRANSCRIPTION_BACKEND = "groq"
 #   medium (~1.5 GB) - Slow, excellent accuracy
 #   large  (~3 GB)   - Slowest, best accuracy (requires lots of RAM)
 
-MODEL_SIZE = "base"
+MODEL_SIZE = "medium"
 
 # Compute type:
 #   "int8"    - Best for CPU (faster, less memory)
 #   "float16" - Best for GPU with CUDA
 #   "float32" - Fallback (slower)
 
-COMPUTE_TYPE = "int8"
+COMPUTE_TYPE = "float32"
 
 # =============================================================================
 # GROQ API SETTINGS (only used if TRANSCRIPTION_BACKEND = "groq" or TRANSFORM_BACKEND = "groq")
@@ -85,20 +86,20 @@ SAMPLE_RATE = 16000
 # Add or remove words as needed for your speaking style.
 
 FILLERS = [
-    "um",
-    "uh",
-    "uhh",
-    "umm",
-    "hmm",
-    "hm",
-    "like",
-    "you know",
-    "basically",
-    "actually",
-    "i mean",
-    "sort of",
-    "kind of",
-    "right",
+    # "um",
+    # "uh",
+    # "uhh",
+    # "umm",
+    # "hmm",
+    # "hm",
+    # "like",
+    # "you know",
+    # "basically",
+    # "actually",
+    # "i mean",
+    # "sort of",
+    # "kind of",
+    # "right",
 ]
 
 # =============================================================================
