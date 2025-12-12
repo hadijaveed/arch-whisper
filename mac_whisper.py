@@ -10,6 +10,7 @@ SOCKET_PATH = "/tmp/mac-whisper.sock"
 CLIENT_COMMANDS = {"start", "stop", "status", "ping", "reset"}
 
 if len(sys.argv) > 1 and sys.argv[1] in CLIENT_COMMANDS:
+
     def send_command(cmd):
         try:
             c = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -25,6 +26,7 @@ if len(sys.argv) > 1 and sys.argv[1] in CLIENT_COMMANDS:
             return "error: timeout"
         except Exception as e:
             return f"error: {e}"
+
     print(send_command(sys.argv[1]))
     sys.exit(0)
 
@@ -43,7 +45,14 @@ import numpy as np
 import objc
 import sounddevice as sd
 from scipy.io import wavfile
-from AppKit import NSStatusBar, NSImage, NSImageSymbolConfiguration, NSVariableStatusItemLength, NSApplication, NSColor
+from AppKit import (
+    NSStatusBar,
+    NSImage,
+    NSImageSymbolConfiguration,
+    NSVariableStatusItemLength,
+    NSApplication,
+    NSColor,
+)
 from Foundation import NSObject, NSTimer
 from PyObjCTools import AppHelper
 
@@ -120,7 +129,7 @@ class RecordingIndicator(NSObject):
     def show(self):
         self._should_show = True
 
-    def hide(self):
+    def foo(self):
         self._should_show = False
 
 
@@ -144,8 +153,11 @@ class MacWhisper:
     def load_model(self):
         if TRANSCRIPTION_BACKEND == "local":
             from faster_whisper import WhisperModel
+
             print(f"Loading faster-whisper model '{MODEL_SIZE}'...")
-            self.model = WhisperModel(MODEL_SIZE, device="cpu", compute_type=COMPUTE_TYPE)
+            self.model = WhisperModel(
+                MODEL_SIZE, device="cpu", compute_type=COMPUTE_TYPE
+            )
             print("Model loaded!")
         else:
             print(f"Using Groq API ({GROQ_WHISPER_MODEL})")
@@ -157,8 +169,13 @@ class MacWhisper:
         try:
             escaped = message.replace('"', '\\"')
             subprocess.run(
-                ["osascript", "-e", f'display notification "{escaped}" with title "Whisper"'],
-                check=False, capture_output=True,
+                [
+                    "osascript",
+                    "-e",
+                    f'display notification "{escaped}" with title "Whisper"',
+                ],
+                check=False,
+                capture_output=True,
             )
         except Exception:
             pass
@@ -191,7 +208,9 @@ class MacWhisper:
             blocksize=1024,
         )
         self.stream.start()
-        self.watchdog_timer = threading.Timer(MAX_RECORDING_SECONDS, self._watchdog_timeout)
+        self.watchdog_timer = threading.Timer(
+            MAX_RECORDING_SECONDS, self._watchdog_timeout
+        )
         self.watchdog_timer.start()
         self.indicator.show()
         print("Recording started...")
@@ -261,6 +280,7 @@ class MacWhisper:
 
     def _transcribe_groq(self, audio) -> str:
         from groq import Groq
+
         api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
             raise ValueError("GROQ_API_KEY not set")
@@ -345,7 +365,9 @@ class MacWhisper:
         text = re.sub(r"\s+", " ", text).strip()
         if text:
             text = text[0].upper() + text[1:]
-        text = re.sub(r"([.!?])\s+([a-z])", lambda m: m.group(1) + " " + m.group(2).upper(), text)
+        text = re.sub(
+            r"([.!?])\s+([a-z])", lambda m: m.group(1) + " " + m.group(2).upper(), text
+        )
         text = re.sub(r"^[,.\s]+", "", text)
         text = re.sub(r"[,\s]+$", "", text)
         return text
@@ -372,7 +394,10 @@ class MacWhisper:
         """Type text using clipboard paste (more reliable than keystroke)."""
         if not text:
             return
-        if time.time() - self.last_typing_time < MULTI_TURN_SPACING_WINDOW and text[0] not in ".,!?:;)'\"":
+        if (
+            time.time() - self.last_typing_time < MULTI_TURN_SPACING_WINDOW
+            and text[0] not in ".,!?:;)'\""
+        ):
             text = " " + text
         try:
             # Save original clipboard
@@ -382,8 +407,13 @@ class MacWhisper:
             process.communicate(input=text.encode("utf-8"))
             # Paste with Cmd+V
             subprocess.run(
-                ["osascript", "-e", 'tell application "System Events" to keystroke "v" using command down'],
-                check=True, capture_output=True,
+                [
+                    "osascript",
+                    "-e",
+                    'tell application "System Events" to keystroke "v" using command down',
+                ],
+                check=True,
+                capture_output=True,
             )
             self.last_typing_time = time.time()
             # Restore original clipboard after a brief delay
@@ -401,14 +431,22 @@ class MacWhisper:
             return
         if self.transform_first_chunk:
             self.transform_first_chunk = False
-            if time.time() - self.last_typing_time < MULTI_TURN_SPACING_WINDOW and text[0] not in ".,!?:;)'\"":
+            if (
+                time.time() - self.last_typing_time < MULTI_TURN_SPACING_WINDOW
+                and text[0] not in ".,!?:;)'\""
+            ):
                 text = " " + text
         try:
             process = subprocess.Popen(["pbcopy"], stdin=subprocess.PIPE)
             process.communicate(input=text.encode("utf-8"))
             subprocess.run(
-                ["osascript", "-e", 'tell application "System Events" to keystroke "v" using command down'],
-                check=True, capture_output=True,
+                [
+                    "osascript",
+                    "-e",
+                    'tell application "System Events" to keystroke "v" using command down',
+                ],
+                check=True,
+                capture_output=True,
             )
             self.last_typing_time = time.time()
         except Exception:
@@ -459,6 +497,7 @@ class MacWhisper:
 
     def _transform_with_groq(self, prompt: str) -> str:
         from groq import Groq
+
         api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
             raise ValueError("GROQ_API_KEY not set")
@@ -467,7 +506,9 @@ class MacWhisper:
         stream = client.chat.completions.create(
             model=TRANSFORM_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            stream=True, max_tokens=500, temperature=0.3,
+            stream=True,
+            max_tokens=500,
+            temperature=0.3,
         )
         result = self._stream_transform(stream, lambda c: c.choices[0].delta.content)
         print(f"Transformed: {result}")
@@ -475,11 +516,13 @@ class MacWhisper:
 
     def _transform_with_ollama(self, prompt: str) -> str:
         import requests
+
         try:
             response = requests.post(
                 "http://localhost:11434/api/generate",
                 json={"model": TRANSFORM_MODEL, "prompt": prompt, "stream": True},
-                stream=True, timeout=30,
+                stream=True,
+                timeout=30,
             )
             response.raise_for_status()
 

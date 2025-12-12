@@ -62,8 +62,7 @@ GROQ_WHISPER_MODEL = "whisper-large-v3-turbo"
 # =============================================================================
 # LANGUAGE SETTINGS
 # =============================================================================
-# Language code (ISO 639-1):
-#   "en" - English
+# Language code (ISO 639-1): "en" - English
 #   "es" - Spanish
 #   "fr" - French
 #   "de" - German
