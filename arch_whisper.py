@@ -8,7 +8,7 @@ import sys
 
 SOCKET_PATH = "/tmp/arch-whisper.sock"
 
-CLIENT_COMMANDS = {"start", "stop", "status", "ping", "reset"}
+CLIENT_COMMANDS = {"start", "stop", "toggle", "status", "ping", "reset"}
 
 if len(sys.argv) > 1 and sys.argv[1] in CLIENT_COMMANDS:
     def send_command(cmd):
@@ -431,7 +431,14 @@ class ArchWhisper:
 
     def handle_command(self, command: str) -> str:
         command = command.strip().lower()
-        if command == "start":
+        if command == "toggle":
+            if self.recording:
+                threading.Thread(target=self._process_recording, daemon=True).start()
+                return "stopping"
+            else:
+                self.start_recording()
+                return "starting"
+        elif command == "start":
             self.start_recording()
             return "ok"
         elif command == "stop":
