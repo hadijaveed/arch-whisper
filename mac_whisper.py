@@ -129,7 +129,7 @@ class RecordingIndicator(NSObject):
     def show(self):
         self._should_show = True
 
-    def foo(self):
+    def hide(self):
         self._should_show = False
 
 
